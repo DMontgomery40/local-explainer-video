@@ -8,11 +8,37 @@ from typing import Literal
 import anthropic
 import openai
 
+# Singleton LLM clients
+_openai_client = None
+_anthropic_client = None
+
+
+def _get_openai_client():
+    """Get or create singleton OpenAI client."""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = openai.OpenAI()
+    return _openai_client
+
+
+def _get_anthropic_client():
+    """Get or create singleton Anthropic client."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic()
+    return _anthropic_client
+
+
+# Cached prompts
+_PROMPTS: dict[str, str] = {}
+
 
 def load_prompt(name: str) -> str:
-    """Load a prompt from the prompts directory."""
-    prompt_path = Path(__file__).parent.parent / "prompts" / f"{name}.txt"
-    return prompt_path.read_text()
+    """Load a prompt from the prompts directory (cached)."""
+    if name not in _PROMPTS:
+        prompt_path = Path(__file__).parent.parent / "prompts" / f"{name}.txt"
+        _PROMPTS[name] = prompt_path.read_text()
+    return _PROMPTS[name]
 
 
 def generate_storyboard(
@@ -51,7 +77,7 @@ Return the storyboard as a JSON array of scenes."""
 
 def _generate_with_openai(system_prompt: str, user_prompt: str) -> list[dict]:
     """Generate storyboard using OpenAI GPT-5.1 Responses API."""
-    client = openai.OpenAI()
+    client = _get_openai_client()
 
     response = client.responses.create(
         model="gpt-5.1",
@@ -87,7 +113,7 @@ def _generate_with_openai(system_prompt: str, user_prompt: str) -> list[dict]:
 
 def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]:
     """Generate storyboard using Anthropic Claude Sonnet 4 with extended thinking."""
-    client = anthropic.Anthropic()
+    client = _get_anthropic_client()
 
     response = client.messages.create(
         model="claude-sonnet-4-5",
@@ -144,12 +170,20 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
     """Validate and normalize scene data."""
     validated = []
     for i, scene in enumerate(scenes):
+        narration = scene.get("narration", "").strip()
+        visual_prompt = scene.get("visual_prompt", "").strip()
+
+        if not narration:
+            raise ValueError(f"Scene {i+1} has empty narration")
+        if not visual_prompt:
+            raise ValueError(f"Scene {i+1} has empty visual prompt")
+
         validated.append({
             "id": scene.get("id", i),
-            "uid": scene.get("uid", str(uuid.uuid4())[:8]),  # Permanent unique ID for widget keys
+            "uid": scene.get("uid", str(uuid.uuid4())[:8]),
             "title": scene.get("title", f"Scene {i + 1}"),
-            "narration": scene.get("narration", ""),
-            "visual_prompt": scene.get("visual_prompt", ""),
+            "narration": narration,
+            "visual_prompt": visual_prompt,
             "refinement_history": scene.get("refinement_history", []),
             "image_path": scene.get("image_path"),
             "audio_path": scene.get("audio_path"),
@@ -186,7 +220,7 @@ User feedback: {feedback}
 Please provide the refined prompt."""
 
     if provider == "openai":
-        client = openai.OpenAI()
+        client = _get_openai_client()
         response = client.responses.create(
             model="gpt-5.1",
             instructions=system_prompt,
@@ -196,7 +230,7 @@ Please provide the refined prompt."""
         return response.output_text.strip()
 
     elif provider == "anthropic":
-        client = anthropic.Anthropic()
+        client = _get_anthropic_client()
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=2048,
@@ -205,7 +239,10 @@ Please provide the refined prompt."""
                 {"role": "user", "content": user_prompt},
             ],
         )
-        return response.content[0].text.strip()
+        text_block = next((b for b in response.content if hasattr(b, 'text')), None)
+        if not text_block:
+            raise ValueError("No text response from model")
+        return text_block.text.strip()
 
     else:
         raise ValueError(f"Unknown provider: {provider}")
@@ -227,17 +264,7 @@ def refine_narration(
     Returns:
         Refined narration string
     """
-    system_prompt = """You are refining narration for a patient-friendly qEEG brain scan explainer video.
-
-The tone should be warm, conversational, like a great podcast host - think NotebookLM energy.
-Use "we", rhetorical questions, genuine enthusiasm. Never clinical or dry.
-
-Your job: Take the current narration and user feedback, output improved narration.
-
-IMPORTANT: Keep all factual claims, numbers, and data points exactly as they are.
-Only change the style, length, or phrasing as requested.
-
-OUTPUT: Just the new narration. No explanation."""
+    system_prompt = load_prompt("refiner_narration_system")
 
     user_prompt = f"""Original narration: {original_narration}
 
@@ -246,7 +273,7 @@ User feedback: {feedback}
 Please provide the refined narration."""
 
     if provider == "openai":
-        client = openai.OpenAI()
+        client = _get_openai_client()
         response = client.responses.create(
             model="gpt-5.1",
             instructions=system_prompt,
@@ -256,7 +283,7 @@ Please provide the refined narration."""
         return response.output_text.strip()
 
     elif provider == "anthropic":
-        client = anthropic.Anthropic()
+        client = _get_anthropic_client()
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=2048,
@@ -265,7 +292,10 @@ Please provide the refined narration."""
                 {"role": "user", "content": user_prompt},
             ],
         )
-        return response.content[0].text.strip()
+        text_block = next((b for b in response.content if hasattr(b, 'text')), None)
+        if not text_block:
+            raise ValueError("No text response from model")
+        return text_block.text.strip()
 
     else:
         raise ValueError(f"Unknown provider: {provider}")

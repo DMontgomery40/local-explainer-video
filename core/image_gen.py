@@ -62,7 +62,7 @@ def generate_image(
         image_url = str(output)
 
     # Download and save the image
-    response = requests.get(image_url, timeout=120)
+    response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
     response.raise_for_status()
 
     output_path.write_bytes(response.content)
@@ -119,7 +119,7 @@ def edit_image(
         image_url = str(output)
 
     # Download and save
-    response = requests.get(image_url, timeout=120)
+    response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
     response.raise_for_status()
     output_path.write_bytes(response.content)
 

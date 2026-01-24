@@ -66,8 +66,8 @@ class RateLimiter:
 
 
 # Global instances with tuned delays
-# Replicate: 3000 req/min = 50 req/s, but we add buffer for safety
-image_limiter = RateLimiter(min_delay=1.5, max_retries=3)
+# Replicate: 3000 req/min = 50 req/s, reduced delay for faster batch processing
+image_limiter = RateLimiter(min_delay=0.5, max_retries=3)
 
 # OpenAI TTS: more generous limits, shorter delay
 openai_limiter = RateLimiter(min_delay=0.5, max_retries=3)

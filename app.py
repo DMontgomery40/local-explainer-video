@@ -7,6 +7,7 @@ slideshow videos with AI-generated images and voiceover.
 
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -63,7 +64,11 @@ def load_plan(project_dir: Path) -> dict | None:
     """Load plan.json from a project directory."""
     plan_path = project_dir / "plan.json"
     if plan_path.exists():
-        return json.loads(plan_path.read_text())
+        try:
+            return json.loads(plan_path.read_text())
+        except json.JSONDecodeError as e:
+            st.error(f"Corrupted plan.json in {project_dir.name}: {e}")
+            return None
     return None
 
 
@@ -216,6 +221,8 @@ def render_step_1():
         help="Folder name for the project (no spaces)",
     )
     project_name = project_name.replace(" ", "_")
+    # Sanitize: allow only alphanumeric, underscore, dash
+    project_name = re.sub(r'[^a-zA-Z0-9_-]', '_', project_name)
 
     # Overwrite option
     existing_path = PROJECTS_DIR / project_name
@@ -329,7 +336,7 @@ def render_step_2():
 
     # Scene cards
     for i, scene in enumerate(scenes):
-        scene_id = scene["id"]
+        scene_id = scene.get("id", i)
         # Use permanent uid for widget keys (generate if missing for old projects)
         if "uid" not in scene:
             scene["uid"] = str(uuid.uuid4())[:8]
@@ -407,9 +414,12 @@ def render_step_2():
                                     narration_feedback,
                                     provider=provider,
                                 )
-                                scene["narration"] = refined
-                                save_plan(project_dir, plan)
-                                st.rerun()
+                                if not refined or not refined.strip():
+                                    st.error("Refinement returned empty result")
+                                else:
+                                    scene["narration"] = refined
+                                    save_plan(project_dir, plan)
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Error: {e}")
                     else:
@@ -454,9 +464,12 @@ def render_step_2():
                                         narration=scene.get("narration", ""),
                                         provider=provider,
                                     )
-                                    scene["visual_prompt"] = refined
-                                    save_plan(project_dir, plan)
-                                    st.rerun()
+                                    if not refined or not refined.strip():
+                                        st.error("Refinement returned empty result")
+                                    else:
+                                        scene["visual_prompt"] = refined
+                                        save_plan(project_dir, plan)
+                                        st.rerun()
                                 except Exception as e:
                                     st.error(f"Error: {e}")
                         else:
