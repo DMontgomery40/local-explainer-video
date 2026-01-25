@@ -1060,8 +1060,9 @@ def qc_and_publish_project(
         for i, scene in enumerate(scenes):
             if not isinstance(scene, dict):
                 continue
-            sid = scene.get("id")
-            if sid not in narration_changed_scene_ids:
+            sid = scene.get("id", i)
+            sid_int = int(sid) if sid is not None else i
+            if sid_int not in narration_changed_scene_ids:
                 continue
             try:
                 path = generate_scene_audio(

@@ -97,7 +97,7 @@ Qwen is an image generation model. It has ZERO knowledge of:
 YOU MUST translate every concept into CONCRETE visual descriptions:
 
 WRONG: "visualization of theta/beta ratio dropping from 4.8 to 2.6"
-RIGHT: "Split image. Left side: circular gauge with needle pointing to red zone, text '4.8' below. Right side: same gauge with needle in green zone, text '2.6' below. Left labeled 'Before', right labeled 'After'."
+RIGHT: "Split image. Left side: simple stylized meter glowing red, large text '4.8' below. Right side: same meter glowing green, large text '2.6' below. Left labeled 'Before', right labeled 'After'. Abstract, minimal design - NOT a realistic gauge with tick marks."
 
 WRONG: "showing brain fog lifting"
 RIGHT: "Left side: 3D brain with gray misty fog overlay, muted blue-gray colors, dim. Right side: identical brain, crystal clear with no fog, bright warm golden lighting, sharp details."
@@ -109,6 +109,36 @@ WRONG: "coherence patterns flipping between regions"
 RIGHT: "Two brain diagrams side by side. Left brain: thick bright line connecting front to middle, thin dim line connecting middle to back. Right brain: thin dim line front to middle, thick bright line middle to back. Arrows and lines should be glowing neon style."
 
 For EVERY visual prompt, ask yourself: "Could an artist with zero medical knowledge draw this?" If not, you haven't described it concretely enough.
+
+AVOID HYPER-DETAILED INSTRUMENTATION:
+The image model struggles with realistic gauges, stopwatches, speedometers, dials with many tick marks, or any instrument with lots of sequential tiny numbers. These always come out garbled.
+
+INSTEAD: Use stylized, abstract versions of these metaphors:
+- NOT: "realistic stopwatch showing 256ms with tick marks"
+- YES: "glowing circular timer icon with large text '256ms' below"
+- NOT: "speedometer dial with numbers 0-100 and needle at 47"
+- YES: "simple arc meter glowing from red to green, large '47%' text"
+- NOT: "detailed clock face showing precise timing"
+- YES: "abstract pulsing circle representing timing, clean text labels"
+
+The KEY NUMBERS should be large, clear text labels - not rendered as part of instrument details. Keep instruments stylized and minimal. The data visualization should feel modern and clean, not like a realistic dashboard.
+
+AVOID PHOTOREALISTIC PEOPLE:
+AI image models struggle with realistic human faces and bodies - they create uncanny valley artifacts. Worse, they often change gender/age/appearance mid-image or between related scenes.
+
+INSTEAD: Use abstract or symbolic representations:
+- NOT: "photorealistic woman sleeping in bed, then same woman looking tired"
+- YES: "stylized silhouette figure resting, soft blue tones" or "abstract 'fatigue' concept with drooping shapes"
+- NOT: "realistic 32-year-old male patient sitting in clinic"
+- YES: "abstract human form outline, warm supportive lighting" or avoid showing the person entirely
+
+If you MUST include a human figure:
+1. Use the EXACT gender from the patient demographics (male/female)
+2. Keep it abstract: silhouettes, simple shapes, or artistic representations
+3. NEVER show faces in detail - keep them obscured, silhouetted, or symbolic
+4. Prefer conceptual metaphors over literal depictions of the patient
+
+Best approach: Focus on brain visualizations, data graphics, and conceptual imagery rather than depicting people at all.
 
 CRITICAL: EACH VISUAL PROMPT MUST BE 100% SELF-CONTAINED
 The image model has NO MEMORY. NO CONTEXT. Each prompt is a standalone API call.
@@ -200,6 +230,41 @@ If the data suggests multiple explanations, blend them creatively or pick the mo
 - Weave mechanisms into the story naturally
 - Acknowledge uncertainty gracefully ("The data suggests...")
 - Patients want understanding, not a literature review of 4 hypotheses
+
+ANALOGY VARIETY - MIX IT UP!
+DO NOT use "hardware vs software" in every video. Pick ONE primary analogy per video based on what fits the patient's story best:
+
+**Orchestra/Music analogies** (good for synchronization, coherence, timing):
+- "Brain regions playing in sync like musicians finding their rhythm"
+- "Different sections of the orchestra learning to follow the same conductor"
+- "The timing improved—like instruments that were slightly off-beat finding their groove"
+
+**Traffic/Flow analogies** (good for processing speed, efficiency, pathways):
+- "Neural highways clearing up, letting signals flow faster"
+- "Rush hour traffic becoming smooth highway driving"
+- "Finding better routes around the congestion"
+
+**Fitness/Training analogies** (good for improvement over time, adaptation):
+- "The brain getting stronger, like a muscle responding to training"
+- "Building endurance—the brain can sustain effort longer without fatigue"
+- "Recovery time improving, like an athlete bouncing back faster"
+
+**Weather/Climate analogies** (good for overall state, fog, clarity):
+- "The fog lifting, revealing clearer skies"
+- "Stormy activity calming into steadier patterns"
+- "The forecast improving—more stable, predictable conditions"
+
+**Network/Connection analogies** (good for coherence, communication between regions):
+- "Stronger signal between towers—clearer communication"
+- "The network upgraded—faster, more reliable connections"
+- "Different departments finally talking to each other effectively"
+
+**Garden/Growth analogies** (good for healing, neuroplasticity, gradual improvement):
+- "New pathways growing like plants finding sunlight"
+- "Pruning the overgrown areas, letting healthier patterns flourish"
+- "The seeds planted in treatment starting to bloom"
+
+Pick the analogy family that best matches THIS patient's primary findings. Use it consistently through the video (don't mix 3 different analogy systems). The example script uses hardware/software—that's ONE option, not the only option.
 
 MANDATORY SCENE STRUCTURE
 

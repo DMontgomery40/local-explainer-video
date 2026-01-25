@@ -22,6 +22,9 @@ If `../qEEG-analysis` exists on the same machine, Step 3 includes a **QC + Publi
 - Fixes: **Qwen Image Edit only** (never regenerate images for text fixes)
 - If the prompt text is correct but the rendered slide text is wrong, **do not rewrite the prompt** — fix the PNG via edit.
 - If a patient-data number is wrong *in the prompt*, change **only that number** (surgical string replace), then re-run QC.
+- By default, visual QC runs in **check-only mode** (no automated image edits). When issues are found it writes:
+  - `projects/<PROJECT>/qc_visual_issues.json`
+  Enable auto-fix in the UI by checking **Auto-fix slide text (image edit)** or via CLI `--auto-fix-images`.
 - Publish targets:
   - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
   - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked)
@@ -30,7 +33,9 @@ If `../qEEG-analysis` exists on the same machine, Step 3 includes a **QC + Publi
 
 - Run app: `./start.sh`
 - Manual: `/opt/homebrew/bin/python3.10 -m streamlit run app.py`
-- CLI QC: `python3.10 qc_publish.py --project 09-23-1982-0`
+- CLI QC (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
+- CLI QC (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
+- Batch (latest version per patient, valid patient IDs only): `python3.10 qc_publish_batch.py`
 
 ## Environment variables (common)
 

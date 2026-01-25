@@ -1,12 +1,31 @@
-"""Text-to-speech generation using Kokoro with OpenAI fallback."""
+"""Text-to-speech generation using Kokoro, ElevenLabs, or OpenAI."""
 
 import os
 from pathlib import Path
 from typing import Literal
 
+import requests
 import soundfile as sf
 
-from core.rate_limiter import openai_limiter
+from core.rate_limiter import openai_limiter, image_limiter
+
+# ElevenLabs voices - curated selection for narration
+# Full library at: https://elevenlabs.io/voice-library
+ELEVENLABS_VOICES = {
+    # Female voices
+    "Rachel": ("21m00Tcm4TlvDq8ikWAM", "Warm, calm female - great for explainers"),
+    "Bella": ("EXAVITQu4vr4xnSDxMaL", "Friendly, conversational female"),
+    "Elli": ("MF3mGyEYCl7XYWbV9V6O", "Young, energetic female"),
+    "Domi": ("AZnzlk1XvdvUeBnXmlld", "Strong, confident female"),
+    # Male voices
+    "Antoni": ("ErXwobaYiN019PkySvjV", "Calm, professional male"),
+    "Josh": ("TxGEqnHWrfWFTfGW9XjX", "Deep, authoritative male"),
+    "Adam": ("pNInz6obpgDQGcFmaJgB", "Deep, warm male"),
+    "Arnold": ("VR6AewLTigWG4xSOukaG", "Bold, energetic male"),
+}
+
+DEFAULT_ELEVENLABS_VOICE = "Rachel"
+DEFAULT_ELEVENLABS_MODEL = "eleven_turbo_v2_5"  # Good quality/speed balance
 
 # Available Kokoro voices
 # American English (lang_code='a'):
@@ -43,6 +62,10 @@ KOKORO_VOICES = {
 # Default settings for upbeat, engaging narration
 DEFAULT_VOICE = "af_bella"  # More upbeat than af_heart
 DEFAULT_SPEED = 1.1  # Slightly faster than normal
+DEFAULT_EXAGGERATION = 0.6  # Slightly more expressive than neutral (0.5)
+
+# TTS Provider type
+TTSProvider = Literal["kokoro", "chatterbox", "openai"]
 
 
 def generate_audio(
@@ -50,7 +73,8 @@ def generate_audio(
     output_path: str | Path,
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
-    tts_provider: Literal["kokoro", "openai"] = "kokoro",
+    tts_provider: TTSProvider = "kokoro",
+    exaggeration: float = DEFAULT_EXAGGERATION,
 ) -> Path:
     """
     Generate speech audio from text.
@@ -58,9 +82,10 @@ def generate_audio(
     Args:
         text: The text to convert to speech
         output_path: Where to save the audio file
-        voice: Voice identifier (see KOKORO_VOICES for options)
-        speed: Speech speed multiplier (1.0 = normal, 1.2 = 20% faster)
-        tts_provider: TTS provider to use
+        voice: Voice identifier (for Kokoro - see KOKORO_VOICES)
+        speed: Speech speed multiplier (1.0 = normal, 1.2 = 20% faster) - Kokoro only
+        tts_provider: TTS provider ("kokoro", "chatterbox", or "openai")
+        exaggeration: Emotion intensity 0.25-2.0 (0.5=neutral, higher=more expressive) - Chatterbox only
 
     Returns:
         Path to the saved audio file
@@ -75,6 +100,8 @@ def generate_audio(
             # Fallback to OpenAI if Kokoro fails
             print(f"Kokoro TTS failed ({e}), falling back to OpenAI...")
             return _generate_with_openai(text, output_path)
+    elif tts_provider == "chatterbox":
+        return _generate_with_chatterbox(text, output_path, exaggeration)
     elif tts_provider == "openai":
         return _generate_with_openai(text, output_path)
     else:
@@ -112,6 +139,64 @@ def _generate_with_kokoro(text: str, output_path: Path, voice: str, speed: float
         raise ValueError("No audio generated")
 
     return output_path
+
+
+def _generate_with_chatterbox(
+    text: str,
+    output_path: Path,
+    exaggeration: float = 0.5,
+    cfg_weight: float = 0.5,
+    temperature: float = 0.8,
+) -> Path:
+    """
+    Generate audio using Chatterbox on Replicate.
+
+    Chatterbox supports emotion control and tags like [laugh], [cough], [chuckle].
+
+    Args:
+        text: Text to synthesize (can include emotion tags)
+        output_path: Where to save the audio file
+        exaggeration: Emotion intensity 0.25-2.0 (0.5=neutral, higher=more expressive)
+        cfg_weight: Pace/CFG weight 0.2-1.0
+        temperature: Variability 0.05-5.0
+
+    Returns:
+        Path to the saved audio file
+    """
+    import replicate
+
+    def _call_chatterbox():
+        return replicate.run(
+            "resemble-ai/chatterbox",
+            input={
+                "prompt": text,
+                "exaggeration": exaggeration,
+                "cfg_weight": cfg_weight,
+                "temperature": temperature,
+                "seed": 0,  # Random seed for variety
+            }
+        )
+
+    # Use image_limiter since it's also Replicate
+    output_url = image_limiter.call_with_retry(_call_chatterbox)
+
+    # Download the audio file
+    response = requests.get(output_url)
+    response.raise_for_status()
+
+    # Chatterbox returns WAV, save directly
+    # If output_path expects WAV, write directly; otherwise handle format
+    temp_path = output_path.with_suffix(".wav")
+    temp_path.write_bytes(response.content)
+
+    # If caller wanted WAV, we're done
+    if output_path.suffix == ".wav":
+        if temp_path != output_path:
+            temp_path.rename(output_path)
+        return output_path
+
+    # Otherwise convert (though WAV is preferred)
+    return temp_path
 
 
 def _generate_with_openai(text: str, output_path: Path, voice: str = "nova") -> Path:
@@ -162,9 +247,10 @@ def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
 def generate_scene_audio(
     scene: dict,
     project_dir: Path,
-    tts_provider: Literal["kokoro", "openai"] = "kokoro",
+    tts_provider: TTSProvider = "kokoro",
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
+    exaggeration: float = DEFAULT_EXAGGERATION,
 ) -> Path:
     """
     Generate audio for a specific scene.
@@ -172,9 +258,10 @@ def generate_scene_audio(
     Args:
         scene: Scene dictionary with 'id' and 'narration'
         project_dir: Project directory for saving assets
-        tts_provider: TTS provider to use
-        voice: Voice identifier (see KOKORO_VOICES for options)
-        speed: Speech speed multiplier (1.0 = normal, 1.2 = 20% faster)
+        tts_provider: TTS provider ("kokoro", "chatterbox", or "openai")
+        voice: Voice identifier (for Kokoro - see KOKORO_VOICES)
+        speed: Speech speed multiplier (Kokoro only)
+        exaggeration: Emotion intensity 0.25-2.0 (Chatterbox only)
 
     Returns:
         Path to the generated audio
@@ -185,5 +272,10 @@ def generate_scene_audio(
     output_path = project_dir / "audio" / f"scene_{scene_id:03d}.wav"
 
     return generate_audio(
-        narration, output_path, voice=voice, speed=speed, tts_provider=tts_provider
+        narration,
+        output_path,
+        voice=voice,
+        speed=speed,
+        tts_provider=tts_provider,
+        exaggeration=exaggeration,
     )

@@ -173,7 +173,9 @@ before publishing an MP4 to the clinician portal sync folder.
 - Loads ground truth from qEEG Council (Stage 4 consolidation + Stage 1 `_data_pack.json`)
 - Uses a judge model (Claude Opus 4.5) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
 - Uses Gemini vision to find misspelled words / wrong patient numbers *in the rendered slide images*
-- Fixes slide text via **Qwen Image Edit** (no regeneration), re-renders the MP4, then publishes to:
+- By default, visual QC runs in **check-only mode** (no automated image edits). When issues are found it writes:
+  - `projects/<PROJECT>/qc_visual_issues.json`
+- Optionally fixes slide text via **Qwen Image Edit** (no regeneration), re-renders the MP4, then publishes to:
   - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
   - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked)
 
@@ -191,7 +193,14 @@ Run it from the UI:
 Or run it from the CLI:
 
 ```bash
-python3.10 qc_publish.py --project 09-23-1982-0
+python3.10 qc_publish.py --project 09-23-1982-0            # check-only
+python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images
+```
+
+Batch mode (latest version per patient, valid patient IDs only):
+
+```bash
+python3.10 qc_publish_batch.py
 ```
 
 Common env vars:

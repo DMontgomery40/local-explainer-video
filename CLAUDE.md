@@ -57,18 +57,23 @@ clinician portal sync folder.
 - QC must be **ELI5-liberal**: ignore imperfect analogies; be strict only on contradictions + wrong patient-data numbers.
 - For slide text issues, **never regenerate images**; use image edit on the existing PNG.
 - Only change `visual_prompt` when the prompt itself contains a wrong patient number (surgical string replace).
+- Default behavior is **check-only visual QC** (no automated image edits). When issues are found, it writes:
+  - `projects/<PROJECT>/qc_visual_issues.json`
+  Enable auto-fix explicitly in the UI or with `--auto-fix-images`.
 
 **How it works**
 1. Loads qEEG Council ground truth for the patient ID (`MM-DD-YYYY-N`) from `qEEG-analysis/data/app.db`
 2. Runs Opus narrative QC on `plan.json` (may apply high-confidence string replacements; blocks on critical issues)
-3. Runs Gemini visual QC on each rendered slide PNG, proposes deterministic replacements, applies them via image edit
+3. Runs Gemini visual QC on each rendered slide PNG and blocks if issues are found (optionally applies fixes via image edit)
 4. Re-renders the MP4, then publishes it to:
    - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
    - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked upload; non-fatal if backend is down)
 
 Run it:
 - Streamlit: Step 3 → **QC + Publish**
-- CLI: `python3.10 qc_publish.py --project 09-23-1982-0`
+- CLI (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
+- CLI (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
+- Batch: `python3.10 qc_publish_batch.py` (latest version per patient, valid patient IDs only)
 
 ## Image Action Gotchas (Generate vs Edit)
 

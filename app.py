@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 from core.director import generate_storyboard, refine_prompt, refine_narration
 from core.image_gen import generate_scene_image, edit_image
-from core.voice_gen import generate_scene_audio, KOKORO_VOICES, DEFAULT_VOICE, DEFAULT_SPEED
+from core.voice_gen import generate_scene_audio, KOKORO_VOICES, DEFAULT_VOICE, DEFAULT_SPEED, DEFAULT_EXAGGERATION
 from core.video_assembly import assemble_video, get_video_duration, preview_scene
 from core.qc_publish import (
     QCPublishConfig,
@@ -101,6 +101,10 @@ def init_session_state():
         st.session_state.tts_voice = DEFAULT_VOICE
     if "tts_speed" not in st.session_state:
         st.session_state.tts_speed = DEFAULT_SPEED
+    if "tts_provider" not in st.session_state:
+        st.session_state.tts_provider = "kokoro"  # Default to free local TTS
+    if "tts_exaggeration" not in st.session_state:
+        st.session_state.tts_exaggeration = DEFAULT_EXAGGERATION
 
 
 def get_existing_projects() -> list[str]:
@@ -179,32 +183,63 @@ def render_sidebar():
         # TTS Settings
         st.subheader("Voice Settings")
 
-        # Voice selector
-        voice_options = list(KOKORO_VOICES.keys())
-        voice_labels = [f"{v} - {KOKORO_VOICES[v]}" for v in voice_options]
-        current_voice_idx = voice_options.index(st.session_state.tts_voice) if st.session_state.tts_voice in voice_options else 0
-
-        selected_voice = st.selectbox(
-            "Voice",
-            options=voice_options,
-            format_func=lambda v: f"{v} - {KOKORO_VOICES[v]}",
-            index=current_voice_idx,
-            key="voice_selector",
-            help="Choose the narrator voice",
+        # TTS Provider selector
+        tts_providers = {
+            "kokoro": "Kokoro (Free, Local)",
+            "chatterbox": "Chatterbox (Expressive, $0.15/video)",
+            "openai": "OpenAI TTS",
+        }
+        selected_provider = st.selectbox(
+            "TTS Provider",
+            options=list(tts_providers.keys()),
+            format_func=lambda p: tts_providers[p],
+            index=list(tts_providers.keys()).index(st.session_state.tts_provider),
+            key="tts_provider_selector",
+            help="Chatterbox has emotion control; Kokoro is free but neutral",
         )
-        st.session_state.tts_voice = selected_voice
+        st.session_state.tts_provider = selected_provider
 
-        # Speed slider
-        speed = st.slider(
-            "Speed",
-            min_value=0.8,
-            max_value=1.5,
-            value=st.session_state.tts_speed,
-            step=0.1,
-            key="speed_slider",
-            help="1.0 = normal, 1.2 = 20% faster",
-        )
-        st.session_state.tts_speed = speed
+        # Provider-specific settings
+        if selected_provider == "kokoro":
+            # Voice selector (Kokoro only)
+            voice_options = list(KOKORO_VOICES.keys())
+            current_voice_idx = voice_options.index(st.session_state.tts_voice) if st.session_state.tts_voice in voice_options else 0
+
+            selected_voice = st.selectbox(
+                "Voice",
+                options=voice_options,
+                format_func=lambda v: f"{v} - {KOKORO_VOICES[v]}",
+                index=current_voice_idx,
+                key="voice_selector",
+                help="Choose the narrator voice",
+            )
+            st.session_state.tts_voice = selected_voice
+
+            # Speed slider (Kokoro only)
+            speed = st.slider(
+                "Speed",
+                min_value=0.8,
+                max_value=1.5,
+                value=st.session_state.tts_speed,
+                step=0.1,
+                key="speed_slider",
+                help="1.0 = normal, 1.2 = 20% faster",
+            )
+            st.session_state.tts_speed = speed
+
+        elif selected_provider == "chatterbox":
+            # Exaggeration slider (Chatterbox only)
+            exaggeration = st.slider(
+                "Expressiveness",
+                min_value=0.25,
+                max_value=1.5,
+                value=st.session_state.tts_exaggeration,
+                step=0.05,
+                key="exaggeration_slider",
+                help="0.5 = neutral, higher = more expressive/emotional",
+            )
+            st.session_state.tts_exaggeration = exaggeration
+            st.caption("Supports tags: [laugh], [cough], [chuckle]")
 
         st.divider()
 
@@ -547,8 +582,10 @@ def render_step_2():
                             try:
                                 path = generate_scene_audio(
                                     scene, project_dir,
+                                    tts_provider=st.session_state.tts_provider,
                                     voice=st.session_state.tts_voice,
                                     speed=st.session_state.tts_speed,
+                                    exaggeration=st.session_state.tts_exaggeration,
                                 )
                                 scene["audio_path"] = str(path)
                                 save_plan(project_dir, plan)
@@ -563,8 +600,10 @@ def render_step_2():
                             try:
                                 path = generate_scene_audio(
                                     scene, project_dir,
+                                    tts_provider=st.session_state.tts_provider,
                                     voice=st.session_state.tts_voice,
                                     speed=st.session_state.tts_speed,
+                                    exaggeration=st.session_state.tts_exaggeration,
                                 )
                                 scene["audio_path"] = str(path)
                                 save_plan(project_dir, plan)
@@ -641,8 +680,10 @@ def render_step_2():
                     try:
                         path = generate_scene_audio(
                             scene, project_dir,
+                            tts_provider=st.session_state.tts_provider,
                             voice=st.session_state.tts_voice,
                             speed=st.session_state.tts_speed,
+                            exaggeration=st.session_state.tts_exaggeration,
                         )
                         scene["audio_path"] = str(path)
                         save_plan(project_dir, plan)
@@ -867,6 +908,51 @@ def render_step_3():
             st.write(f"**Backend upload:** {'ok' if summary.backend_upload_ok else 'failed'}")
         except QCPublishError as e:
             st.error(str(e))
+            issues_path = project_dir / "qc_visual_issues.json"
+            if issues_path.exists():
+                try:
+                    payload = json.loads(issues_path.read_text(encoding="utf-8"))
+                    issues = payload.get("issues", []) if isinstance(payload, dict) else []
+                    if isinstance(issues, list) and issues:
+                        st.info(f"Visual QC issues written to: {issues_path}")
+                        rows = []
+                        for item in issues:
+                            if not isinstance(item, dict):
+                                continue
+                            scene_id = item.get("scene_id")
+                            slide_num = item.get("slide_num")
+                            repls = item.get("replacements") or []
+                            if isinstance(repls, list) and repls:
+                                for r in repls:
+                                    if not isinstance(r, dict):
+                                        continue
+                                    rows.append(
+                                        {
+                                            "scene_id": scene_id,
+                                            "slide": slide_num,
+                                            "from": r.get("from"),
+                                            "to": r.get("to"),
+                                            "why": r.get("why"),
+                                            "where": r.get("where"),
+                                        }
+                                    )
+                            else:
+                                rows.append(
+                                    {
+                                        "scene_id": scene_id,
+                                        "slide": slide_num,
+                                        "from": None,
+                                        "to": None,
+                                        "why": None,
+                                        "where": None,
+                                    }
+                                )
+                        if rows:
+                            st.dataframe(rows, use_container_width=True, hide_index=True)
+                        with st.expander("Raw qc_visual_issues.json"):
+                            st.code(json.dumps(payload, indent=2), language="json")
+                except Exception as e2:
+                    st.warning(f"Could not read visual QC report ({issues_path}): {e2}")
         except Exception as e:
             st.error(f"Unexpected error: {e}")
 
