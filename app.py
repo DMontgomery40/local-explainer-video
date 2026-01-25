@@ -750,7 +750,7 @@ def render_step_3():
     st.divider()
     st.subheader("QC + Publish")
     st.caption(
-        "Runs a final verification pass against qEEG Council ground truth, fixes slide text via image-edit (no regeneration), "
+        "Runs a final verification pass against qEEG Council ground truth, optionally fixes slide text via image-edit (no regeneration), "
         "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
     )
 
@@ -795,8 +795,18 @@ def render_step_3():
         min_value=1,
         max_value=10,
         value=5,
-        help="Recheck images after edits until all clear (or until this max is reached).",
+        help="Only used when auto-fix is enabled (recheck images after edits until all clear).",
         key="qc_max_passes",
+    )
+
+    auto_fix_images = st.checkbox(
+        "Auto-fix slide text (image edit)",
+        value=False,
+        help=(
+            "If enabled, QC will attempt deterministic text edits on the existing PNGs via Qwen Image Edit. "
+            "If disabled, QC will only report issues (writes qc_visual_issues.json) and block publish."
+        ),
+        key="qc_auto_fix_images",
     )
 
     run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
@@ -830,6 +840,7 @@ def render_step_3():
                 cliproxy_url=cliproxy_url,
                 cliproxy_api_key=cliproxy_api_key,
                 max_visual_passes=int(max_passes),
+                auto_fix_images=bool(auto_fix_images),
                 fps=int(fps),
                 output_filename=str(output_name or "final_video.mp4"),
                 tts_voice=st.session_state.tts_voice,

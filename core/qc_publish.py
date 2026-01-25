@@ -161,7 +161,14 @@ def load_qeeg_ground_truth(*, qeeg_dir: Path, patient_label: str) -> QEGGroundTr
         # Patients may be duplicated (case-insensitive label collisions). Choose the newest run across all matches.
         cur.execute(
             """
-            SELECT runs.id AS run_id, runs.patient_id AS patient_uuid, runs.created_at AS created_at, runs.consolidator_model_id AS consolidator_model_id
+            SELECT
+              runs.id AS run_id,
+              runs.patient_id AS patient_uuid,
+              runs.report_id AS report_id,
+              runs.status AS status,
+              runs.error_message AS error_message,
+              runs.created_at AS created_at,
+              runs.consolidator_model_id AS consolidator_model_id
             FROM runs
             JOIN patients ON patients.id = runs.patient_id
             WHERE lower(patients.label) = lower(?)
@@ -178,9 +185,13 @@ def load_qeeg_ground_truth(*, qeeg_dir: Path, patient_label: str) -> QEGGroundTr
             raise QCPublishError(f"No runs found in qEEG Council for patient label: {patient_label}")
 
         best: QEGGroundTruth | None = None
+        checked: list[dict[str, Any]] = []
         for r in runs:
             run_id = str(r["run_id"])
             patient_uuid = str(r["patient_uuid"])
+            report_id = str(r["report_id"] or "")
+            status = str(r["status"] or "")
+            error_message = str(r["error_message"] or "")
             consolidator_model_id = str(r["consolidator_model_id"] or "")
 
             cur.execute(
@@ -216,6 +227,19 @@ def load_qeeg_ground_truth(*, qeeg_dir: Path, patient_label: str) -> QEGGroundTr
             dp_row = cur.fetchone()
             data_pack_path = _resolve_qeeg_path(qeeg_dir, str(dp_row["content_path"])) if dp_row else None
 
+            checked.append(
+                {
+                    "run_id": run_id,
+                    "status": status,
+                    "report_id": report_id,
+                    "has_stage4": bool(consolidation_path),
+                    "has_data_pack": bool(data_pack_path),
+                    "consolidation_path": str(consolidation_path) if consolidation_path else None,
+                    "data_pack_path": str(data_pack_path) if data_pack_path else None,
+                    "error_message": error_message.strip() or None,
+                }
+            )
+
             if not consolidation_path or not data_pack_path:
                 continue
             if not consolidation_path.exists() or not data_pack_path.exists():
@@ -242,10 +266,28 @@ def load_qeeg_ground_truth(*, qeeg_dir: Path, patient_label: str) -> QEGGroundTr
             break
 
         if best is None:
+            lines: list[str] = []
+            for item in checked[:5]:
+                err = item.get("error_message") or ""
+                if isinstance(err, str) and len(err) > 160:
+                    err = err[:160] + "…"
+                lines.append(
+                    "- "
+                    + f"{item.get('run_id')} status={item.get('status')!r} "
+                    + f"stage4={bool(item.get('has_stage4'))} data_pack={bool(item.get('has_data_pack'))} "
+                    + (f"report_id={item.get('report_id')!r} " if item.get("report_id") else "")
+                    + (f"error={err!r}" if err else "")
+                )
+            hint = (
+                "Hint: In qEEG-analysis, ensure the report was re-extracted (OCR) and a successful run exists "
+                "with Stage 1 `_data_pack.json` and Stage 4 consolidation."
+            )
             raise QCPublishError(
                 "Could not find a recent run with BOTH Stage 4 consolidation and Stage 1 _data_pack.json.\n"
                 f"Patient label: {patient_label}\n"
-                f"Checked runs: {len(runs)}"
+                f"Checked runs: {len(runs)}\n"
+                + ("Recent runs:\n" + "\n".join(lines) + "\n" if lines else "")
+                + hint
             )
         return best
     finally:
@@ -817,7 +859,7 @@ def qc_and_publish_project(
 
     max_passes = 1 if not config.auto_fix_images else max(1, config.max_visual_passes)
     for pass_idx in range(1, max_passes + 1):
-        _phase(f"Visual check pass {pass_idx}/{config.max_visual_passes}…")
+        _phase(f"Visual check pass {pass_idx}/{max_passes}…")
         any_edits = False
         for i, scene in enumerate(scenes):
             if not isinstance(scene, dict):

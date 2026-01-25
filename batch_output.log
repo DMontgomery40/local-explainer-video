@@ -1,0 +1,180 @@
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 0
+[IMAGE_GEN]   visual_prompt length: 395
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_000.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_000.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Clean, modern title card on deep navy to black gradient background. Large centered text reading 'The...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 577 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN] Created Replicate client with 120s timeout
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x109762140>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/rUVjWQbIqKKmPZW66KJJomtXf8VWfa16w5Bg1juikor5A4AWA/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1652773 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_000.png
+[IMAGE_GEN]   File exists: True, size: 1652773
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_000.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 1
+[IMAGE_GEN]   visual_prompt length: 427
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_001.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_001.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Dark navy gradient background with clean white text. Title at top reading 'What We'll Explore' in bo...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 609 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x109763b80>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/zpWgDGJCzCZxFVs0nFnKlpFKdoPVMPRfKM2ZznWwS7ngAcALA/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1304834 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_001.png
+[IMAGE_GEN]   File exists: True, size: 1304834
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_001.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 2
+[IMAGE_GEN]   visual_prompt length: 505
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_002.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_002.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Split layout. Left side shows calendar pages for 'October 2022', 'November 2022', 'January 2023' sta...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 687 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x10f8100a0>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/Zekb61XuBCVdeUe4B517txoYQjth5m4J6IoDEKrUcYMTCwBsA/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1569752 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_002.png
+[IMAGE_GEN]   File exists: True, size: 1569752
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_002.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 3
+[IMAGE_GEN]   visual_prompt length: 487
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_003.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_003.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Top-down view of translucent 3D head model showing 19 glowing electrode positions arranged in standa...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 669 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x10f811a50>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/ASyeSiTPkhXlKadXDZMjlJElefGMdffir6jblX9DwXAOKAHwC/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1667967 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_003.png
+[IMAGE_GEN]   File exists: True, size: 1667967
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_003.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 4
+[IMAGE_GEN]   visual_prompt length: 516
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_004.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_004.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Three ascending bar graphs side by side. Left graph: 'Anxiety Relief' showing bars dropping from 12 ...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 698 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x10f8130d0>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/hQ3fz5LK4m0pPajaMFgWmlPEeuzOSbBH9eQdlDGSN41yCwBsA/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1350513 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_004.png
+[IMAGE_GEN]   File exists: True, size: 1350513
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_004.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 5
+[IMAGE_GEN]   visual_prompt length: 474
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_005.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_005.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): Side-by-side brain comparison. Left brain labeled 'Session 1' shows two bright glowing points (left ...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 656 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)
+[RATE_LIMITER]   Attempt 1/3: SUCCESS
+[IMAGE_GEN]   API call succeeded, output type: <class 'list'>
+[IMAGE_GEN]   Output value: [<replicate.helpers.FileOutput object at 0x10f83c550>]
+[IMAGE_GEN]   Output was list, first element: https://replicate.delivery/xezq/3IbaDTM6vo57MBDQRjAGCpllC8bvAJHRJYofE8ocVGkwAcALA/out-0.png
+[IMAGE_GEN]   Downloading image from URL...
+[IMAGE_GEN]   Download response status: 200
+[IMAGE_GEN]   Downloaded 1745674 bytes
+[IMAGE_GEN]   Saved to: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_005.png
+[IMAGE_GEN]   File exists: True, size: 1745674
+[IMAGE_GEN] === generate_scene_image() SUCCESS: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_005.png ===
+[IMAGE_GEN] === generate_scene_image() START ===
+[IMAGE_GEN]   scene keys: ['id', 'uid', 'title', 'narration', 'visual_prompt', 'refinement_history', 'image_path', 'audio_path']
+[IMAGE_GEN]   project_dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0
+[IMAGE_GEN]   scene_id: 6
+[IMAGE_GEN]   visual_prompt length: 864
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_006.png
+[IMAGE_GEN] generate_image() called
+[IMAGE_GEN]   output_path: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_006.png
+[IMAGE_GEN]   model: qwen/qwen-image-2512
+[IMAGE_GEN]   prompt (first 100 chars): {previous scene: Side-by-side brain comparison. Left brain labeled 'Session 1' shows two bright glow...
+[IMAGE_GEN]   Creating parent dir: /Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images
+[IMAGE_GEN]   Full prompt length: 1046 chars
+[IMAGE_GEN]   Starting API call with retry...
+[RATE_LIMITER] call_with_retry() starting, max_retries=3
+[RATE_LIMITER]   Attempt 1/3: waiting...
+[RATE_LIMITER]   Attempt 1/3: calling function...
+[IMAGE_GEN]   Calling client.run() with model: qwen/qwen-image-2512 (120s timeout)

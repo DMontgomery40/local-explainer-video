@@ -15,6 +15,7 @@ develop-eggs/
 dist/
 downloads/
 eggs/
+.mypy_cache/
 .eggs/
 lib/
 lib64/

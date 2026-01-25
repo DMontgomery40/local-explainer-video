@@ -58,8 +58,8 @@ def generate_storyboard(
     system_prompt = load_prompt("director_system")
     user_prompt = f"""Create a storyboard for an explainer video based on this qEEG analysis.
 
-CRITICAL: Total narration must be 1,100-1,300 words (7-8 min video).
-Target ~70 words per scene average. Count as you go.
+CRITICAL: Total narration must be 950-1,100 words (6-7 min video).
+Target ~15 scenes, ~50 words average per content scene. Count as you go.
 
 ---
 {input_text}

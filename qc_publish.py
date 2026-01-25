@@ -48,6 +48,11 @@ def main() -> int:
     parser.add_argument("--output", default="final_video.mp4", help="Output filename within the project directory.")
     parser.add_argument("--fps", type=int, default=24)
     parser.add_argument("--max-visual-passes", type=int, default=5)
+    parser.add_argument(
+        "--auto-fix-images",
+        action="store_true",
+        help="Apply deterministic slide text fixes via image-edit (otherwise report issues only).",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -67,6 +72,7 @@ def main() -> int:
         cliproxy_url=str(args.cliproxy_url).rstrip("/"),
         cliproxy_api_key=str(args.cliproxy_api_key or ""),
         max_visual_passes=int(args.max_visual_passes),
+        auto_fix_images=bool(args.auto_fix_images),
         fps=int(args.fps),
         output_filename=str(args.output),
     )
@@ -94,4 +100,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
