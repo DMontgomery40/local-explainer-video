@@ -67,19 +67,20 @@ def assemble_video(
         # Concatenate all clips (hard cuts, no transitions)
         final_video = concatenate_videoclips(clips, method="compose")
 
-        # Write output video using Apple Silicon hardware encoder
+        # Write output video using CPU encoder (faster for slideshow content)
         final_video.write_videofile(
             str(output_path),
             fps=fps,
-            codec="h264_videotoolbox",  # Apple Silicon GPU acceleration
+            codec="libx264",  # CPU encoding - faster for slideshow content
             audio_codec="aac",
             temp_audiofile=str(project_dir / "temp_audio.m4a"),
             remove_temp=True,
             logger="bar",  # Progress bar
             ffmpeg_params=[
-                "-allow_sw", "0",  # Disable software fallback - force GPU
-                "-q:v", "65",  # Quality (0-100, higher = better)
+                "-preset", "ultrafast",
+                "-crf", "35",
                 "-pix_fmt", "yuv420p",  # Compatible pixel format
+                "-movflags", "+faststart",  # Web-friendly streaming
             ],
         )
 
@@ -149,12 +150,13 @@ def preview_scene(
         image_clip.write_videofile(
             str(output_path),
             fps=fps,
-            codec="h264_videotoolbox",  # Apple Silicon GPU acceleration
+            codec="libx264",  # CPU encoding - faster for slideshow content
             audio_codec="aac",
             ffmpeg_params=[
-                "-allow_sw", "0",  # Force GPU
-                "-q:v", "65",
+                "-preset", "ultrafast",
+                "-crf", "35",
                 "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
             ],
             logger=None,  # Quiet for previews
         )

@@ -164,6 +164,47 @@ local-explainer-video/
 
 ---
 
+## QC + Publish (qEEG Council Integration)
+
+If you also have the qEEG Council repo (`qEEG-analysis`) on the same machine, the app can run a final verification gate
+before publishing an MP4 to the clinician portal sync folder.
+
+**What it does**
+- Loads ground truth from qEEG Council (Stage 4 consolidation + Stage 1 `_data_pack.json`)
+- Uses a judge model (Claude Opus 4.5) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
+- Uses Gemini vision to find misspelled words / wrong patient numbers *in the rendered slide images*
+- Fixes slide text via **Qwen Image Edit** (no regeneration), re-renders the MP4, then publishes to:
+  - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
+  - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked)
+
+**Requirements**
+- The project already has scene assets on disk (images + audio). QC does *not* generate missing assets.
+- qEEG Council repo directory exists (default assumes `../qEEG-analysis`, override with `QEEG_ANALYSIS_DIR`)
+- CLIProxyAPI is running and logged in (for Gemini vision checks)
+- qEEG Council backend is running (for the upload step)
+
+Run it from the UI:
+- Open the patient project
+- Go to **Step 3: Render Video**
+- Click **Run QC + Publish**
+
+Or run it from the CLI:
+
+```bash
+python3.10 qc_publish.py --project 09-23-1982-0
+```
+
+Common env vars:
+
+```
+QEEG_ANALYSIS_DIR=../qEEG-analysis
+QEEG_BACKEND_URL=http://127.0.0.1:8000
+CLIPROXY_BASE_URL=http://127.0.0.1:8317
+CLIPROXY_API_KEY=
+```
+
+---
+
 ## License
 
 MIT – Do whatever you want with it.

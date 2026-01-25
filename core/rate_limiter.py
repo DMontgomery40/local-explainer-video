@@ -2,9 +2,16 @@
 
 import time
 import random
+import sys
+import traceback
 from typing import Callable, TypeVar, Any
 
 T = TypeVar("T")
+
+
+def _log(msg):
+    """Debug logging to stderr."""
+    print(f"[RATE_LIMITER] {msg}", file=sys.stderr, flush=True)
 
 
 class RateLimiter:
@@ -45,19 +52,29 @@ class RateLimiter:
             Exception: Re-raises the last exception after all retries exhausted
         """
         last_exception = None
+        _log(f"call_with_retry() starting, max_retries={self.max_retries}")
 
         for attempt in range(self.max_retries):
             try:
+                _log(f"  Attempt {attempt + 1}/{self.max_retries}: waiting...")
                 self.wait()
-                return func(*args, **kwargs)
+                _log(f"  Attempt {attempt + 1}/{self.max_retries}: calling function...")
+                result = func(*args, **kwargs)
+                _log(f"  Attempt {attempt + 1}/{self.max_retries}: SUCCESS")
+                return result
             except Exception as e:
                 last_exception = e
+                _log(f"  Attempt {attempt + 1}/{self.max_retries}: FAILED - {type(e).__name__}: {e}")
+                _log(f"  Full traceback:\n{traceback.format_exc()}")
+
                 if attempt == self.max_retries - 1:
                     # Last attempt, re-raise
+                    _log(f"  All {self.max_retries} attempts exhausted, re-raising exception")
                     raise
 
                 # Exponential backoff with jitter
                 wait_time = (2 ** attempt) + random.uniform(0, 1)
+                _log(f"  Retrying in {wait_time:.1f}s...")
                 print(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time:.1f}s...")
                 time.sleep(wait_time)
 

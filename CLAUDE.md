@@ -39,6 +39,44 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 **Prompt files** (`prompts/`): Loaded at runtime, not hardcoded.
 
+## QC + Publish (qEEG Council Integration)
+
+This repo can optionally run a final QA gate against **qEEG Council** ground truth before publishing an MP4 into the
+clinician portal sync folder.
+
+**Ground truth**
+- Narrative truth: qEEG Council **Stage 4 consolidation** (markdown)
+- Numeric truth: qEEG Council **Stage 1 `_data_pack.json`**
+
+**Models**
+- Narrative judge: **Claude Opus 4.5** (Anthropic API)
+- Visual judge: **Gemini 3 Flash** via **CLIProxyAPI** (vision over rendered slide PNGs)
+- Fixes: **Qwen Image Edit** (Replicate) — surgical edits only
+
+**Non-negotiables**
+- QC must be **ELI5-liberal**: ignore imperfect analogies; be strict only on contradictions + wrong patient-data numbers.
+- For slide text issues, **never regenerate images**; use image edit on the existing PNG.
+- Only change `visual_prompt` when the prompt itself contains a wrong patient number (surgical string replace).
+
+**How it works**
+1. Loads qEEG Council ground truth for the patient ID (`MM-DD-YYYY-N`) from `qEEG-analysis/data/app.db`
+2. Runs Opus narrative QC on `plan.json` (may apply high-confidence string replacements; blocks on critical issues)
+3. Runs Gemini visual QC on each rendered slide PNG, proposes deterministic replacements, applies them via image edit
+4. Re-renders the MP4, then publishes it to:
+   - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
+   - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked upload; non-fatal if backend is down)
+
+Run it:
+- Streamlit: Step 3 → **QC + Publish**
+- CLI: `python3.10 qc_publish.py --project 09-23-1982-0`
+
+## Image Action Gotchas (Generate vs Edit)
+
+These are intentionally different codepaths/models:
+- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → `qwen/qwen-image-2512` (new image)
+- **Edit Image** → `core/image_gen.edit_image()` → `qwen/qwen-image-edit-2511` (surgical on existing PNG)
+- **Refine Prompt** → prompt rewrite step; avoid for QC automation
+
 ## Voice Configuration
 
 Kokoro TTS supports multiple voices and speed settings:
@@ -67,10 +105,14 @@ Kokoro TTS supports multiple voices and speed settings:
 
 ## Environment Variables
 
-Required in `.env`:
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `REPLICATE_API_TOKEN`
+Base pipeline (`.env`):
+- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (director)
+- `REPLICATE_API_TOKEN` (image gen/edit)
+
+QC + Publish (optional):
+- `CLIPROXY_BASE_URL` / `CLIPROXY_API_KEY` (Gemini visual QC)
+- `QEEG_ANALYSIS_DIR` (defaults to `../qEEG-analysis`)
+- `QEEG_BACKEND_URL` (defaults to `http://127.0.0.1:8000`)
 
 ## Constraints
 

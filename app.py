@@ -21,6 +21,16 @@ from core.director import generate_storyboard, refine_prompt, refine_narration
 from core.image_gen import generate_scene_image, edit_image
 from core.voice_gen import generate_scene_audio, KOKORO_VOICES, DEFAULT_VOICE, DEFAULT_SPEED
 from core.video_assembly import assemble_video, get_video_duration, preview_scene
+from core.qc_publish import (
+    QCPublishConfig,
+    QCPublishError,
+    default_cliproxy_api_key,
+    default_cliproxy_url,
+    default_qeeg_analysis_dir,
+    default_qeeg_backend_url,
+    infer_patient_id,
+    qc_and_publish_project,
+)
 
 # Load environment variables (override shell env vars with .env file)
 load_dotenv(override=True)
@@ -700,9 +710,9 @@ def render_step_3():
 
     col1, col2 = st.columns(2)
     with col1:
-        fps = st.selectbox("Frame Rate", [24, 30, 60], index=0)
+        fps = st.selectbox("Frame Rate", [24, 30, 60], index=0, key="render_fps")
     with col2:
-        output_name = st.text_input("Output Filename", "final_video.mp4")
+        output_name = st.text_input("Output Filename", "final_video.mp4", key="render_output_name")
 
     # Render button
     video_path = project_dir / output_name
@@ -734,8 +744,120 @@ def render_step_3():
                 data=f,
                 file_name=output_name,
                 mime="video/mp4",
-                type="primary",
+                    type="primary",
+                )
+
+    st.divider()
+    st.subheader("QC + Publish")
+    st.caption(
+        "Runs a final verification pass against qEEG Council ground truth, fixes slide text via image-edit (no regeneration), "
+        "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
+    )
+
+    guessed_patient_id = infer_patient_id(project_dir.name) if project_dir else None
+    patient_id = st.text_input(
+        "Patient ID (MM-DD-YYYY-N)",
+        value=guessed_patient_id or "",
+        help="Used to locate the latest qEEG Council run (Stage 4 consolidation + Stage 1 data pack).",
+        key="qc_patient_id",
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        qeeg_dir = st.text_input(
+            "qEEG Council repo directory",
+            value=str(default_qeeg_analysis_dir()),
+            help="Path to the qEEG Council repo (contains data/app.db and artifacts).",
+            key="qc_qeeg_dir",
+        )
+        backend_url = st.text_input(
+            "qEEG Council backend URL",
+            value=default_qeeg_backend_url(),
+            help="Used to upload the MP4 via /api/patients/{patient_uuid}/files.",
+            key="qc_backend_url",
+        )
+    with col_b:
+        cliproxy_url = st.text_input(
+            "CLIProxyAPI URL",
+            value=default_cliproxy_url(),
+            help="Used for Gemini visual QC via OpenAI-compatible /v1/chat/completions.",
+            key="qc_cliproxy_url",
+        )
+        cliproxy_api_key = st.text_input(
+            "CLIProxyAPI key (optional)",
+            value=default_cliproxy_api_key(),
+            type="password",
+            key="qc_cliproxy_api_key",
+        )
+
+    max_passes = st.number_input(
+        "Max visual QC passes",
+        min_value=1,
+        max_value=10,
+        value=5,
+        help="Recheck images after edits until all clear (or until this max is reached).",
+        key="qc_max_passes",
+    )
+
+    run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
+    if run_qc:
+        if not patient_id.strip():
+            st.error("Enter a Patient ID (MM-DD-YYYY-N) to run QC.")
+            return
+
+        status = st.empty()
+        progress = st.progress(0.0)
+        log_box = st.empty()
+        log_lines: list[str] = []
+
+        def _log(msg: str) -> None:
+            log_lines.append(msg)
+            log_box.code("\n".join(log_lines[-250:]))
+
+        def _phase(p: str) -> None:
+            status.info(p)
+
+        def _progress(v: float) -> None:
+            try:
+                progress.progress(max(0.0, min(1.0, float(v))))
+            except Exception:
+                pass
+
+        try:
+            cfg = QCPublishConfig(
+                qeeg_dir=Path(qeeg_dir).expanduser(),
+                backend_url=backend_url,
+                cliproxy_url=cliproxy_url,
+                cliproxy_api_key=cliproxy_api_key,
+                max_visual_passes=int(max_passes),
+                fps=int(fps),
+                output_filename=str(output_name or "final_video.mp4"),
+                tts_voice=st.session_state.tts_voice,
+                tts_speed=float(st.session_state.tts_speed),
             )
+
+            updated_plan, summary = qc_and_publish_project(
+                project_dir=project_dir,
+                plan=plan,
+                patient_id=patient_id.strip(),
+                config=cfg,
+                log=_log,
+                set_phase=_phase,
+                set_progress=_progress,
+            )
+            st.session_state.plan = updated_plan
+            save_plan(project_dir, updated_plan)
+
+            st.success("QC + Publish complete.")
+            st.write(f"**Run:** {summary.run_id}")
+            st.write(f"**Video:** {summary.video_path}")
+            if summary.portal_copy_path:
+                st.write(f"**Portal folder:** {summary.portal_copy_path}")
+            st.write(f"**Backend upload:** {'ok' if summary.backend_upload_ok else 'failed'}")
+        except QCPublishError as e:
+            st.error(str(e))
+        except Exception as e:
+            st.error(f"Unexpected error: {e}")
 
 
 def render_batch_queue():
