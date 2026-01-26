@@ -34,7 +34,7 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 **Core modules**:
 - `core/director.py` - LLM-based storyboard generation (5-15 scenes from clinical text)
 - `core/image_gen.py` - Replicate API (Qwen Image), with style suffix auto-appended
-- `core/voice_gen.py` - Kokoro local TTS with configurable voice/speed, OpenAI TTS fallback
+- `core/voice_gen.py` - Kokoro (local) / ElevenLabs / OpenAI TTS
 - `core/video_assembly.py` - MoviePy + ffmpeg, hard cuts only, 24fps, GPU acceleration
 
 **Prompt files** (`prompts/`): Loaded at runtime, not hardcoded.
@@ -79,8 +79,67 @@ Run it:
 
 These are intentionally different codepaths/models:
 - **Generate/Regenerate Image** → `core/image_gen.generate_image()` → `qwen/qwen-image-2512` (new image)
-- **Edit Image** → `core/image_gen.edit_image()` → `qwen/qwen-image-edit-2511` (surgical on existing PNG)
+- **Edit Image** → `core/image_gen.edit_image()` → DashScope `qwen-image-edit-max` (if `DASHSCOPE_API_KEY` is set) or Replicate `qwen/qwen-image-edit-2511` (fallback). Override via sidebar **Image Edit** or `IMAGE_EDIT_MODEL`.
 - **Refine Prompt** → prompt rewrite step; avoid for QC automation
+
+## DashScope Image Edit API (qwen-image-edit-*)
+
+DashScope (Alibaba Model Studio) provides higher-quality image editing with additional parameters.
+
+### Models Available
+
+| Model | Quality | Outputs | Notes |
+|-------|---------|---------|-------|
+| `qwen-image-edit-max` | Highest | 1-6 | Best for production |
+| `qwen-image-edit-plus` | Mid-tier | 1-6 | Faster, lower cost |
+| `qwen-image-edit` | Base | 1 only | Single output only |
+
+### API Parameters
+
+| Parameter | Type | Range/Values | Default | Notes |
+|-----------|------|--------------|---------|-------|
+| `n` | int | 1-6 | 1 | Number of output variants (max/plus only) |
+| `size` | string | "512*512" to "2048*2048" | auto from input | Explicit output dimensions |
+| `prompt_extend` | bool | true/false | true | Let API expand prompt for better results |
+| `negative_prompt` | string | max 500 chars | " " | Things to avoid in output |
+| `watermark` | bool | true/false | false | Add watermark (disabled by default) |
+| `seed` | int | 0-2147483647 | random | For reproducible edits |
+
+### Input Capabilities
+
+- **1-3 images** per request (multi-image fusion supported)
+- Formats: JPG, JPEG, PNG, BMP, TIFF, WEBP, GIF
+- Resolution: 384-3072 pixels per dimension
+- Max file size: 10MB per image
+- Prompt max: 800 characters
+
+### Supported Edit Types
+
+1. Text editing (modify text, font, color)
+2. Object add/remove/move
+3. Subject pose changes
+4. Style transfer
+5. Background replacement
+6. Viewpoint transformation
+7. Portrait modification
+8. Old photo restoration
+
+### UI Controls (Sidebar)
+
+When a DashScope model is selected in the sidebar, additional controls appear:
+- **Variants (n)**: Slider 1-6 for generating multiple output options
+- **Seed**: Text input for reproducible edits (leave empty for random)
+- **Prompt extend**: Checkbox to let DashScope expand your prompt
+- **Negative prompt**: Text input for things to avoid
+
+### Environment Variables
+
+```bash
+DASHSCOPE_API_KEY=sk-...         # Required for DashScope models
+DASHSCOPE_REGION=SINGAPORE       # Optional: SINGAPORE (default) or BEIJING
+DASHSCOPE_ENDPOINT=https://...   # Optional: Override endpoint URL
+IMAGE_EDIT_MODEL=qwen-image-edit-max  # Optional: Default model
+```
 
 ## Voice Configuration
 
@@ -99,6 +158,10 @@ Kokoro TTS supports multiple voices and speed settings:
 - `1.2` = 20% faster
 - Range: 0.8 to 1.5
 
+ElevenLabs (Flash v2.5) notes:
+- Narration should spell out numbers as words (no digits). The storyboard + narration refiner prompts enforce this.
+- Visual prompts should keep digit labels for slide text/QC (e.g., \"42%\", \"3.5 µV\").
+
 ## Key Design Decisions
 
 - **Editability**: Regenerate single scene assets without rebuilding entire video
@@ -113,6 +176,7 @@ Kokoro TTS supports multiple voices and speed settings:
 Base pipeline (`.env`):
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (director)
 - `REPLICATE_API_TOKEN` (image gen/edit)
+- `ELEVENLABS_API_KEY` (optional; required if selecting ElevenLabs TTS)
 
 QC + Publish (optional):
 - `CLIPROXY_BASE_URL` / `CLIPROXY_API_KEY` (Gemini visual QC)

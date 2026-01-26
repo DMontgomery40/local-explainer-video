@@ -1,5 +1,6 @@
 """Centralized rate limiting and retry logic for API calls."""
 
+import os
 import time
 import random
 import sys
@@ -82,9 +83,37 @@ class RateLimiter:
         raise last_exception  # type: ignore
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except Exception:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
 # Global instances with tuned delays
 # Replicate: 3000 req/min = 50 req/s, reduced delay for faster batch processing
 image_limiter = RateLimiter(min_delay=0.5, max_retries=3)
 
 # OpenAI TTS: more generous limits, shorter delay
 openai_limiter = RateLimiter(min_delay=0.5, max_retries=3)
+
+# ElevenLabs TTS: defaults are conservative (free-tier friendly) and configurable via env vars
+# - ELEVENLABS_MIN_DELAY_S (default 1.2)
+# - ELEVENLABS_MAX_RETRIES (default 5)
+elevenlabs_limiter = RateLimiter(
+    min_delay=_env_float("ELEVENLABS_MIN_DELAY_S", 1.2),
+    max_retries=_env_int("ELEVENLABS_MAX_RETRIES", 5),
+)

@@ -9,6 +9,40 @@ from moviepy import (
 )
 
 
+def _archive_existing_video(output_path: Path, project_dir: Path) -> Path | None:
+    """
+    If output_path exists, move it to project_dir/.v1-videos with versioned naming.
+
+    Example:
+      - .v1-videos/<project>.mp4
+      - .v1-videos/<project> v2.mp4
+      - .v1-videos/<project> v3.mp4
+    """
+    output_path = Path(output_path)
+    if not output_path.exists():
+        return None
+
+    archive_dir = Path(project_dir) / ".v1-videos"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # Prefer the project folder name as the patient/version base.
+    base = Path(project_dir).name.split("__")[0]
+    ext = output_path.suffix or ".mp4"
+
+    dest = archive_dir / f"{base}{ext}"
+    if dest.exists():
+        n = 2
+        while True:
+            candidate = archive_dir / f"{base} v{n}{ext}"
+            if not candidate.exists():
+                dest = candidate
+                break
+            n += 1
+
+    output_path.replace(dest)
+    return dest
+
+
 def assemble_video(
     scenes: list[dict],
     project_dir: Path,
@@ -31,6 +65,10 @@ def assemble_video(
     """
     project_dir = Path(project_dir)
     output_path = project_dir / output_filename
+
+    archived_path = _archive_existing_video(output_path, project_dir)
+    if archived_path:
+        print(f"Archived previous video to: {archived_path}")
 
     clips = []
     audio_clips = []  # Track for cleanup

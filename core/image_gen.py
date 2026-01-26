@@ -1,8 +1,11 @@
-"""Image generation using Replicate API (Qwen Image)."""
+"""Image generation/editing using Replicate (Qwen Image) and DashScope (Alibaba Model Studio)."""
 
 from pathlib import Path
+import base64
+import os
 import traceback
 import sys
+from contextlib import ExitStack
 
 import replicate
 from replicate import Client
@@ -32,6 +35,243 @@ def _get_replicate_client() -> Client:
 
 # Style suffix appended to every image prompt - this is the only context the image model gets
 STYLE_SUFFIX = ", patient-friendly medical education video, warm and reassuring aesthetic, premium healthcare feel, soft lighting, modern and approachable, never clinical or scary, 16:9 aspect ratio"
+
+# DashScope (Alibaba Model Studio) endpoints for Qwen image edit models.
+# NOTE: Beijing + Singapore have separate API keys and endpoints (cross-region calls fail).
+_DASHSCOPE_ENDPOINT_SINGAPORE = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+_DASHSCOPE_ENDPOINT_BEIJING = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+
+
+def _dashscope_endpoint() -> str:
+    override = (os.getenv("DASHSCOPE_ENDPOINT") or "").strip()
+    if override:
+        return override
+    region = (os.getenv("DASHSCOPE_REGION") or "").strip().upper()
+    if region in {"BEIJING", "BJ", "CN"}:
+        return _DASHSCOPE_ENDPOINT_BEIJING
+    # Default to the "intl" endpoint (Singapore) because this repo is commonly run outside CN.
+    return _DASHSCOPE_ENDPOINT_SINGAPORE
+
+
+def _dashscope_api_key() -> str:
+    key = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
+    if not key:
+        raise ValueError("DASHSCOPE_API_KEY is not set (required for DashScope qwen-image-edit-* models).")
+    return key
+
+
+def _data_uri_for_image(path: Path) -> str:
+    ext = path.suffix.lower().lstrip(".")
+    mime = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+        "tif": "image/tiff",
+        "tiff": "image/tiff",
+        "gif": "image/gif",
+    }.get(ext, "application/octet-stream")
+    b64 = base64.b64encode(path.read_bytes()).decode("utf-8")
+    return f"data:{mime};base64,{b64}"
+
+
+def _infer_dashscope_size(path: Path) -> str | None:
+    """Infer an explicit DashScope size from an image, if within allowed bounds."""
+    try:
+        from PIL import Image  # Pillow is already a project dependency
+
+        with Image.open(path) as im:
+            w, h = im.size
+        if 512 <= int(w) <= 2048 and 512 <= int(h) <= 2048:
+            return f"{int(w)}*{int(h)}"
+    except Exception:
+        return None
+    return None
+
+
+def _extract_dashscope_image_urls(payload: dict) -> list[str]:
+    """
+    DashScope response example:
+      { "output": { "choices": [ { "message": { "content": [ {"image": "https://...png"}, ... ]}}]}}
+    """
+    urls: list[str] = []
+    output = payload.get("output")
+    if not isinstance(output, dict):
+        return urls
+    choices = output.get("choices")
+    if not isinstance(choices, list):
+        return urls
+    for c in choices:
+        if not isinstance(c, dict):
+            continue
+        msg = c.get("message")
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            img = part.get("image")
+            if isinstance(img, str) and img.strip():
+                urls.append(img.strip())
+    return urls
+
+
+def _default_image_edit_model() -> str:
+    """
+    Default selection:
+    - If IMAGE_EDIT_MODEL is set, use it verbatim (e.g., 'qwen-image-edit-max' or 'qwen/qwen-image-edit-2511')
+    - Else, if DASHSCOPE_API_KEY is set, default to DashScope 'qwen-image-edit-max'
+    - Else, default to Replicate 'qwen/qwen-image-edit-2511'
+    """
+    provider = (os.getenv("IMAGE_EDIT_PROVIDER") or "").strip().lower()
+    env_model = (os.getenv("IMAGE_EDIT_MODEL") or "").strip()
+    if provider in {"replicate", "rep"}:
+        return env_model or "qwen/qwen-image-edit-2511"
+    if provider in {"dashscope", "alibaba", "modelstudio"}:
+        return env_model or "qwen-image-edit-max"
+    if env_model:
+        return env_model
+    if (os.getenv("DASHSCOPE_API_KEY") or "").strip():
+        return "qwen-image-edit-max"
+    return "qwen/qwen-image-edit-2511"
+
+
+def _edit_image_replicate(
+    *,
+    prompt: str,
+    input_image_paths: list[Path],
+    output_path: Path,
+    model: str,
+    seed: int | None,
+) -> Path:
+    # Note: We need to define the call inside the retry loop to re-open the files on retry
+    def _call_replicate_edit():
+        client = _get_replicate_client()
+        with ExitStack() as stack:
+            files = [stack.enter_context(open(p, "rb")) for p in input_image_paths]
+            inputs: dict = {
+                "prompt": prompt,
+                "image": files,  # Model expects an array
+                "aspect_ratio": "16:9",
+                "output_format": "png",
+                "go_fast": True,
+            }
+            if seed is not None:
+                inputs["seed"] = int(seed)
+            return client.run(
+                model,
+                input=inputs,
+            )
+
+    output = image_limiter.call_with_retry(_call_replicate_edit)
+
+    # Handle output
+    if isinstance(output, list):
+        image_url = output[0]
+    elif hasattr(output, "url"):
+        image_url = output.url
+    else:
+        image_url = str(output)
+
+    # Download and save
+    response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
+    response.raise_for_status()
+    output_path.write_bytes(response.content)
+
+    return output_path
+
+
+def _edit_image_dashscope(
+    *,
+    prompt: str,
+    input_image_paths: list[Path],
+    output_path: Path,
+    model: str,
+    n: int,
+    size: str | None,
+    prompt_extend: bool,
+    negative_prompt: str,
+    watermark: bool,
+    seed: int | None,
+) -> Path:
+    if not (1 <= int(n) <= 6):
+        raise ValueError("DashScope qwen-image-edit-max/qwen-image-edit-plus supports n in [1, 6].")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    endpoint = _dashscope_endpoint()
+    api_key = _dashscope_api_key()
+
+    inferred_size = size or _infer_dashscope_size(input_image_paths[-1])
+    params: dict = {
+        "n": int(n),
+        "negative_prompt": negative_prompt if isinstance(negative_prompt, str) else " ",
+        "prompt_extend": bool(prompt_extend),
+        "watermark": bool(watermark),
+    }
+    if inferred_size:
+        params["size"] = inferred_size
+    if seed is not None:
+        # DashScope supports seed 0-2147483647 for reproducible edits
+        params["seed"] = int(seed) % 2147483648
+
+    content = [{"image": _data_uri_for_image(p)} for p in input_image_paths]
+    content.append({"text": prompt})
+
+    body = {
+        "model": model,
+        "input": {"messages": [{"role": "user", "content": content}]},
+        "parameters": params,
+    }
+
+    def _call_dashscope() -> dict:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        _log(f"  DashScope POST model={model} n={params.get('n')} size={params.get('size', '(default)')}")
+        resp = requests.post(endpoint, headers=headers, json=body, timeout=(10, 240))
+        _log(f"  DashScope response status: {resp.status_code}")
+        try:
+            payload = resp.json()
+        except Exception:
+            # Bubble up HTTP errors with some context
+            snippet = (resp.text or "")[:500]
+            raise RuntimeError(f"DashScope returned non-JSON (HTTP {resp.status_code}): {snippet}") from None
+
+        if resp.status_code != 200:
+            msg = payload.get("message") if isinstance(payload, dict) else None
+            code = payload.get("code") if isinstance(payload, dict) else None
+            raise RuntimeError(f"DashScope image edit failed (HTTP {resp.status_code}, code={code}): {msg}")
+
+        if isinstance(payload, dict) and str(payload.get("code") or "").strip():
+            raise RuntimeError(f"DashScope image edit failed (code={payload.get('code')}): {payload.get('message')}")
+
+        return payload if isinstance(payload, dict) else {}
+
+    payload = image_limiter.call_with_retry(_call_dashscope)
+    urls = _extract_dashscope_image_urls(payload)
+    if not urls:
+        raise RuntimeError(f"DashScope returned no image URLs. Top-level keys: {list(payload.keys())}")
+
+    # Save first image to output_path; if n>1, also save additional images next to it.
+    first_written = False
+    for idx, url in enumerate(urls[: int(n)]):
+        out = (
+            output_path
+            if idx == 0
+            else output_path.with_name(f"{output_path.stem}__n{idx + 1}{output_path.suffix}")
+        )
+        r = requests.get(url, timeout=(5, 120))
+        r.raise_for_status()
+        out.write_bytes(r.content)
+        if not first_written:
+            first_written = True
+    return output_path
+
 
 def generate_image(
     prompt: str,
@@ -133,10 +373,17 @@ def generate_image(
 
 def edit_image(
     prompt: str,
-    input_image_path: str | Path,
+    input_image_path: str | Path | list[str | Path],
     output_path: str | Path,
-    model: str = "qwen/qwen-image-edit-2511",
+    model: str | None = None,
     seed: int | None = None,
+    *,
+    # DashScope-only controls (ignored by Replicate models)
+    n: int = 1,
+    size: str | None = None,
+    prompt_extend: bool = True,
+    negative_prompt: str = " ",
+    watermark: bool = False,
 ) -> Path:
     """
     Edit an existing image using Qwen Image Edit model.
@@ -151,45 +398,39 @@ def edit_image(
     Returns:
         Path to the edited image
     """
-    input_image_path = Path(input_image_path)
+    # Normalize input images (DashScope supports 1-3 images; Replicate model accepts an array too)
+    if isinstance(input_image_path, (list, tuple)):
+        input_image_paths = [Path(p) for p in input_image_path]
+    else:
+        input_image_paths = [Path(input_image_path)]
+
+    chosen_model = (model or "").strip() or _default_image_edit_model()
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Upload the input image - model expects image as file handle
-    # Note: We need to define the call inside the retry loop to re-open the file on retry
-    def _call_replicate_edit():
-        client = _get_replicate_client()
-        with open(input_image_path, "rb") as f:
-            inputs: dict = {
-                "prompt": prompt,
-                "image": [f],  # Model expects array
-                "aspect_ratio": "16:9",
-                "output_format": "png",
-                "go_fast": True,
-            }
-            if seed is not None:
-                inputs["seed"] = int(seed)
-            return client.run(
-                model,
-                input=inputs,
-            )
+    # DashScope model names look like: qwen-image-edit-max, qwen-image-edit-max-2026-01-16, qwen-image-edit-plus, qwen-image-edit
+    if chosen_model.startswith("qwen-image-edit"):
+        return _edit_image_dashscope(
+            prompt=prompt,
+            input_image_paths=input_image_paths,
+            output_path=output_path,
+            model=chosen_model,
+            n=int(n),
+            size=size,
+            prompt_extend=bool(prompt_extend),
+            negative_prompt=negative_prompt,
+            watermark=bool(watermark),
+            seed=seed,
+        )
 
-    output = image_limiter.call_with_retry(_call_replicate_edit)
-
-    # Handle output
-    if isinstance(output, list):
-        image_url = output[0]
-    elif hasattr(output, 'url'):
-        image_url = output.url
-    else:
-        image_url = str(output)
-
-    # Download and save
-    response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
-    response.raise_for_status()
-    output_path.write_bytes(response.content)
-
-    return output_path
+    # Otherwise assume Replicate model id (e.g., "qwen/qwen-image-edit-2511")
+    return _edit_image_replicate(
+        prompt=prompt,
+        input_image_paths=input_image_paths,
+        output_path=output_path,
+        model=chosen_model,
+        seed=seed,
+    )
 
 
 def generate_scene_image(

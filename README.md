@@ -28,7 +28,7 @@ If it saves y'all a few minutes, feel free to grab or fork. 🤷
 1. Paste any text (clinical reports, documentation, scripts, whatever)
 2. An LLM breaks it into 5-15 scenes with narration and image prompts
 3. Generate images locally or via API
-4. Generate voiceover locally with Kokoro TTS
+4. Generate voiceover with Kokoro (local) or ElevenLabs (API)
 5. Stitch it all together into an MP4
 
 Everything is editable scene-by-scene. Regenerate just one image, tweak the narration, whatever you need.
@@ -67,17 +67,17 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 ### 3. API Keys
 
-Copy the example and add your keys:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
+Create a `.env` (or export env vars) and add your keys:
 ```
 OPENAI_API_KEY=sk-...          # Optional: for GPT-based director or TTS fallback
 ANTHROPIC_API_KEY=sk-ant-...   # Optional: for Claude-based director
 REPLICATE_API_TOKEN=r8_...     # Required: for image generation
+DASHSCOPE_API_KEY=sk-...       # Optional: for DashScope Qwen image editing (qwen-image-edit-max/plus)
+DASHSCOPE_REGION=SINGAPORE     # Optional: SINGAPORE (default) or BEIJING (keys/endpoints are region-specific)
+ELEVENLABS_API_KEY=...         # Optional: required only if you select ElevenLabs TTS
+
+# Optional overrides for which model is used when editing existing images (UI "Edit Image" + QC auto-fix)
+IMAGE_EDIT_MODEL=qwen-image-edit-max   # or: qwen/qwen-image-edit-2511
 ```
 
 You need at least one of OpenAI or Anthropic for the director agent.
@@ -122,7 +122,14 @@ Edit `prompts/director_system.txt` to change how the LLM breaks down your input 
 
 ## Voice Options
 
-Uses Kokoro TTS locally. Configure in the sidebar:
+Choose the TTS provider in the sidebar:
+- Kokoro (local, free)
+- ElevenLabs (Flash v2.5)
+- OpenAI TTS
+
+Note for ElevenLabs Flash v2.5:
+- Narration should spell out numbers as words (no digits) for best results.
+- Visual prompts can (and should) keep digit labels for slide text (e.g., \"42%\", \"3.5 µV\").
 
 **Voices:**
 - `af_bella` – Warm, friendly (default)
@@ -143,8 +150,8 @@ local-explainer-video/
 ├── app.py                   # Streamlit UI
 ├── core/
 │   ├── director.py          # LLM storyboarding
-│   ├── image_gen.py         # Replicate image generation
-│   ├── voice_gen.py         # Kokoro/OpenAI TTS
+│   ├── image_gen.py         # Image generation (Replicate) + image editing (Replicate or DashScope)
+│   ├── voice_gen.py         # Kokoro/ElevenLabs/OpenAI TTS
 │   └── video_assembly.py    # MoviePy video stitching
 ├── prompts/
 │   ├── director_system.txt  # Storyboard prompt (edit this!)
@@ -159,6 +166,8 @@ local-explainer-video/
 **Kokoro won't load:** Make sure you're on Python 3.10 and espeak-ng is installed.
 
 **Images failing:** Check your Replicate API token and account credits.
+
+**DashScope image edit failing:** Make sure `DASHSCOPE_API_KEY` matches your region endpoint (`DASHSCOPE_REGION=SINGAPORE` for `dashscope-intl`).
 
 **Video won't play:** Uses H.264 + AAC. Try VLC or a browser.
 
@@ -195,6 +204,7 @@ Or run it from the CLI:
 ```bash
 python3.10 qc_publish.py --project 09-23-1982-0            # check-only
 python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images
+python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images --image-edit-model qwen-image-edit-max
 ```
 
 Batch mode (latest version per patient, valid patient IDs only):

@@ -97,6 +97,11 @@ def main() -> int:
         help="Apply deterministic slide text fixes via image-edit (otherwise report issues only).",
     )
     parser.add_argument(
+        "--image-edit-model",
+        default="",
+        help='Override image edit model (e.g., "qwen-image-edit-max" for DashScope or "qwen/qwen-image-edit-2511" for Replicate).',
+    )
+    parser.add_argument(
         "--stop-on-error",
         action="store_true",
         help="Stop the batch as soon as a project fails QC/publish.",
@@ -146,6 +151,7 @@ def main() -> int:
             auto_fix_images=bool(args.auto_fix_images),
             fps=int(args.fps),
             output_filename=str(args.output),
+            image_edit_model=(str(args.image_edit_model).strip() or None),
         )
 
         def log(msg: str) -> None:

@@ -27,7 +27,17 @@ import requests
 from PIL import Image
 
 from core.image_gen import edit_image
-from core.voice_gen import generate_scene_audio
+from core.voice_gen import (
+    DEFAULT_ELEVENLABS_MODEL,
+    DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
+    DEFAULT_ELEVENLABS_STABILITY,
+    DEFAULT_ELEVENLABS_STYLE,
+    DEFAULT_ELEVENLABS_TEXT_NORMALIZATION,
+    DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    ElevenLabsTextNormalization,
+    TTSProvider,
+    generate_scene_audio,
+)
 from core.video_assembly import assemble_video
 
 
@@ -718,9 +728,27 @@ class QCPublishConfig:
     max_image_changed_ratio: float = 0.25
     fps: int = 24
     output_filename: str = "final_video.mp4"
+    tts_provider: TTSProvider = "kokoro"
     tts_voice: str = "af_bella"
     tts_speed: float = 1.1
+    elevenlabs_model_id: str = DEFAULT_ELEVENLABS_MODEL
+    elevenlabs_apply_text_normalization: ElevenLabsTextNormalization = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
+    elevenlabs_stability: float = DEFAULT_ELEVENLABS_STABILITY
+    elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST
+    elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE
+    elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST
     image_edit_seed: int | None = None
+    # Image edit model/provider used for slide text auto-fixes (Replicate or DashScope).
+    # Examples:
+    # - Replicate: "qwen/qwen-image-edit-2511"
+    # - DashScope: "qwen-image-edit-max"
+    image_edit_model: str | None = None
+    # DashScope-only knobs (ignored by Replicate models)
+    image_edit_n: int = 1
+    image_edit_size: str | None = None
+    image_edit_prompt_extend: bool = True
+    image_edit_negative_prompt: str = " "
+    image_edit_watermark: bool = False
 
 
 @dataclass
@@ -953,7 +981,18 @@ def qc_and_publish_project(
                     f"{img_path.stem}__qc_edit_p{pass_idx}_t{attempt_idx}{img_path.suffix}"
                 )
                 _log(f"Scene {scene_id}: applying edit (try {attempt_idx}/{config.max_image_edit_attempts}, seed={seed})")
-                edit_image(instr, img_path, edited_path, seed=seed)
+                edit_image(
+                    instr,
+                    img_path,
+                    edited_path,
+                    model=config.image_edit_model,
+                    seed=seed,
+                    n=int(config.image_edit_n),
+                    size=config.image_edit_size,
+                    prompt_extend=bool(config.image_edit_prompt_extend),
+                    negative_prompt=str(config.image_edit_negative_prompt),
+                    watermark=bool(config.image_edit_watermark),
+                )
 
                 try:
                     mean_abs, changed_ratio = image_change_metrics(img_path, edited_path)
@@ -1068,8 +1107,15 @@ def qc_and_publish_project(
                 path = generate_scene_audio(
                     scene,
                     project_dir,
+                    tts_provider=config.tts_provider,
                     voice=config.tts_voice,
                     speed=config.tts_speed,
+                    elevenlabs_model_id=config.elevenlabs_model_id,
+                    elevenlabs_apply_text_normalization=config.elevenlabs_apply_text_normalization,
+                    elevenlabs_stability=config.elevenlabs_stability,
+                    elevenlabs_similarity_boost=config.elevenlabs_similarity_boost,
+                    elevenlabs_style=config.elevenlabs_style,
+                    elevenlabs_use_speaker_boost=config.elevenlabs_use_speaker_boost,
                 )
                 scene["audio_path"] = str(path)
                 _log(f"Audio regenerated: scene {sid} -> {path}")
