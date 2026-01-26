@@ -8,9 +8,11 @@ Critical context:
 - You MAY also flag obvious stray punctuation that looks like a generation artifact and makes the slide confusing
   (example: "500+*" -> "500+", "476*" -> "476").
 - Ignore decorative/random numbers (clocks, gauges) unless they clearly appear as a labeled patient metric.
+- DO NOT penalize a slide for missing some expected numbers; only correct text that is shown and clearly intended.
 
 Inputs you will receive (as JSON in text):
 - scene_context: the scene narration + full visual prompt (and optional hints like quoted strings / expected numbers).
+  - If present, scene_context.prior_edit_attempts contains prior {"from","to"} edits that failed; do not repeat them.
 - data_pack: structured patient-data ground truth (numbers, facts, derived values).
 
 Your job:
@@ -31,12 +33,15 @@ Output requirements:
 }
 
 Rules:
-- Keep replacements dead simple, e.g. {"from":"vith","to":"with","why":"misspelling"}.
+- Never output a no-op replacement. Ensure "from" and "to" are meaningfully different (not just whitespace/case).
+- Keep replacements dead simple, e.g. {"from":"Drousy Testing State","to":"Tired Testing State","why":"misspelling"}.
+- For misspellings: DO NOT attempt "spelling correction". Always rewrite to an accurate synonym / alternative phrasing.
+  This dramatically increases image-edit success. Example: "Reorganzation" -> "Creative Rewiring".
+- If prior_edit_attempts are provided, choose a DIFFERENT synonym/phrase than any previous "to" values.
 - For misspellings, prefer replacing a whole *visible phrase* (not a single letter) so an image-edit model can apply it reliably.
-  Example: {"from":"Drousy Testing State","to":"Tired Testing State","why":"misspelling"}
-- If the best correction would require a hard-to-render letter (often v/w in the middle of a word), prefer an accurate synonym.
-  Example: replace "Voltage" with "Signal" / "Strength" if that keeps the meaning and makes text rendering easier.
-- Prefer correcting numbers to match numbers explicitly referenced in scene_context (those are the intended slide numbers).
+- For wrong numbers: replace the smallest meaningful token only (e.g., "88%" -> "82%", "480 ms" -> "370 ms").
+  Do NOT rewrite an entire sentence/caption just to fix a single number.
+- Prefer correcting numbers to match numbers explicitly referenced in scene_context and grounded by data_pack.
 - For stray punctuation, replace the smallest *meaningful* token (e.g., "476*" -> "476"), not a single character.
 - Use "where" only when it helps disambiguate (e.g., "left", "right", "center"); otherwise omit it.
 - If you are not confident about a replacement, do NOT guess; put an explanation in notes and leave replacements empty.

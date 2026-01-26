@@ -10,6 +10,11 @@ Ground truth:
 - Stage 4 CONSOLIDATED report is the narrative truth.
 - Stage 1 DATA PACK is the numeric truth.
 
+Video context (IMPORTANT):
+- These patient-facing videos are produced for a clinic that delivered a specific PBM/NIR intervention called **LUMIT**.
+- Assume the patient received LUMIT during the treatment period between sessions, even if the consolidated report says the source report did not document interventions.
+- The consolidated report’s “no intervention documented / don’t attribute causality” language reflects missing metadata in the report, NOT that LUMIT did not happen.
+
 Your job:
 1) Check the video narration and slide prompts for factual contradictions vs the consolidated report.
 2) Check any patient-data numbers in narration/prompt against the data pack. If clearly wrong, propose a correction.
@@ -20,6 +25,14 @@ Important rules for fixes:
 - Only propose SURGICAL, deterministic string replacements.
 - If proposing a numeric fix, include enough surrounding context in "find" so it is unambiguous (not just a bare number).
 - Only include "safe_autofixes" when confidence is HIGH and the exact "find" text appears in the provided plan field.
+- Do NOT require the visual_prompt to list every metric or every per-electrode number; missing details are acceptable.
+- Do NOT propose rewriting long visual prompts to add extra numbers/structure; only correct numbers/claims that are wrong.
+- For visual_prompt fixes, prefer the smallest possible replacement (often the number token itself, e.g. "88%" -> "82%").
+- Do NOT flag mentions of LUMIT/PBM/NIR as contradictions solely because the consolidated report says an intervention was not documented.
+- You MAY allow causal language about LUMIT only when it is clearly framed as probabilistic (e.g., "may have helped", "likely contributed", "good chance it played a role")
+  and does not claim proof from qEEG alone. If the script implies certainty ("proves", "strongly supports", "the evidence confirms"), flag it.
+- For overly-certain LUMIT phrasing, prefer a small phrase-level safe_autofix when possible (e.g., replace "strongly supports" -> "suggests",
+  "the evidence confirms" -> "the pattern may indicate").
 
 Output requirements:
 - Output ONLY valid JSON (no markdown, no commentary).
@@ -48,4 +61,3 @@ Output requirements:
 }
 
 Set pass=true ONLY if there are no critical_issues.
-

@@ -25,6 +25,8 @@ If `../qEEG-analysis` exists on the same machine, Step 3 includes a **QC + Publi
 - By default, visual QC runs in **check-only mode** (no automated image edits). When issues are found it writes:
   - `projects/<PROJECT>/qc_visual_issues.json`
   Enable auto-fix in the UI by checking **Auto-fix slide text (image edit)** or via CLI `--auto-fix-images`.
+- Narrative QC writes a full trace to `projects/<PROJECT>/qc_narrative_report.json` (what issues were found, what “safe fixes” were applied).
+- If image-edit hits a provider quota/rate-limit (e.g., “reset after 48s”), QC will **auto-wait and continue**.
 - Publish targets:
   - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
   - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked)
