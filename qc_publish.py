@@ -72,7 +72,7 @@ def main() -> int:
 
     plan = load_plan(project_dir)
     cfg = QCPublishConfig(
-        qeeg_dir=Path(args.qeeg_dir).expanduser(),
+        qeeg_dir=Path(str(args.qeeg_dir).strip()).expanduser().resolve(),
         backend_url=str(args.backend_url).rstrip("/"),
         cliproxy_url=str(args.cliproxy_url).rstrip("/"),
         cliproxy_api_key=str(args.cliproxy_api_key or ""),

@@ -69,6 +69,13 @@ clinician portal sync folder.
    - `qEEG-analysis/data/portal_patients/<PATIENT_ID>/<PATIENT_ID>.mp4`
    - qEEG Council backend `POST /api/patients/{patient_uuid}/files` (DB-tracked upload; non-fatal if backend is down)
 
+**Artifacts**
+- Narrative trace: `projects/<PROJECT>/qc_narrative_report.json`
+- Visual issues (check-only mode): `projects/<PROJECT>/qc_visual_issues.json`
+
+**Rate limits**
+- If image-edit hits a provider quota/rate-limit (e.g., “reset after 48s”), QC auto-waits and continues.
+
 Run it:
 - Streamlit: Step 3 → **QC + Publish**
 - CLI (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
@@ -135,7 +142,8 @@ When a DashScope model is selected in the sidebar, additional controls appear:
 ### Environment Variables
 
 ```bash
-DASHSCOPE_API_KEY=sk-...         # Required for DashScope models
+DASHSCOPE_API_KEY=sk-...         # Required for DashScope models (or use ALIBABA_API_KEY)
+ALIBABA_API_KEY=sk-...           # Alternative name for DASHSCOPE_API_KEY
 DASHSCOPE_REGION=SINGAPORE       # Optional: SINGAPORE (default) or BEIJING
 DASHSCOPE_ENDPOINT=https://...   # Optional: Override endpoint URL
 IMAGE_EDIT_MODEL=qwen-image-edit-max  # Optional: Default model

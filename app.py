@@ -63,7 +63,7 @@ def check_api_keys() -> dict[str, bool]:
         "openai": bool(os.getenv("OPENAI_API_KEY")),
         "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
         "replicate": bool(os.getenv("REPLICATE_API_TOKEN")),
-        "dashscope": bool(os.getenv("DASHSCOPE_API_KEY")),
+        "dashscope": bool(os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIBABA_API_KEY")),
         "elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY")),
     }
 
@@ -145,9 +145,10 @@ def init_session_state():
 
     # Image edit model (used for both UI "Edit Image" and QC auto-fix slide text).
     if "image_edit_model" not in st.session_state:
+        has_dashscope = bool((os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIBABA_API_KEY") or "").strip())
         st.session_state.image_edit_model = (
             (os.getenv("IMAGE_EDIT_MODEL") or "").strip()
-            or ("qwen-image-edit-max" if (os.getenv("DASHSCOPE_API_KEY") or "").strip() else "qwen/qwen-image-edit-2511")
+            or ("qwen-image-edit-max" if has_dashscope else "qwen/qwen-image-edit-2511")
         )
 
     # DashScope-specific image edit parameters
@@ -242,7 +243,7 @@ def render_sidebar():
             help="Used for the per-scene 'Edit Image' button and QC auto-fix slide text edits.",
         )
         if str(st.session_state.image_edit_model).startswith("qwen-image-edit") and not keys.get("dashscope"):
-            st.warning("DASHSCOPE_API_KEY missing (required for DashScope image edits).")
+            st.warning("DASHSCOPE_API_KEY or ALIBABA_API_KEY missing (required for DashScope image edits).")
         if "/" in str(st.session_state.image_edit_model) and not keys.get("replicate"):
             st.warning("REPLICATE_API_TOKEN missing (required for Replicate image edits).")
 
@@ -298,7 +299,21 @@ def render_sidebar():
                     if plan:
                         st.session_state.project_dir = project_dir
                         st.session_state.plan = plan
-                        st.session_state.step = 2  # Go to edit scenes
+                        # If a rendered video already exists, jump straight to Render/QC (Step 3)
+                        # so the user can resume QC without re-rendering.
+                        try:
+                            mp4s = sorted(
+                                project_dir.glob("*.mp4"),
+                                key=lambda p: p.stat().st_mtime,
+                                reverse=True,
+                            )
+                        except Exception:
+                            mp4s = []
+                        if mp4s:
+                            st.session_state.step = 3
+                            st.session_state.render_output_name = mp4s[0].name
+                        else:
+                            st.session_state.step = 2  # Go to edit scenes
                         st.rerun()
                     else:
                         st.error("Could not load project")
@@ -935,17 +950,16 @@ def render_step_2():
         )
 
         if st.button(
-            "Proceed to Render →",
+            "Go to Render / QC →",
             type="primary",
-            disabled=not (all_images and all_audio),
         ):
             st.session_state.step = 3
             st.rerun()
 
         if not all_images:
-            st.caption("⚠️ Generate all images first")
+            st.caption("⚠️ Missing images (Render/QC will be incomplete)")
         if not all_audio:
-            st.caption("⚠️ Generate all audio first")
+            st.caption("⚠️ Missing audio (Render/QC will be incomplete)")
 
     st.divider()
     st.subheader("Regenerate Everything")
@@ -1152,6 +1166,10 @@ def render_step_3():
         "Runs a final verification pass against qEEG Council ground truth, optionally fixes slide text via image-edit (no regeneration), "
         "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
     )
+    st.caption(
+        "Narrative QC may apply small 'safe fixes' to plan.json (high-confidence string replacements). "
+        "Full narrative trace is written to qc_narrative_report.json in the project folder."
+    )
 
     guessed_patient_id = infer_patient_id(project_dir.name) if project_dir else None
     patient_id = st.text_input(
@@ -1208,6 +1226,14 @@ def render_step_3():
         key="qc_auto_fix_images",
     )
 
+    narrative_report_path = project_dir / "qc_narrative_report.json"
+    if narrative_report_path.exists():
+        with st.expander("Last narrative QC trace (qc_narrative_report.json)"):
+            try:
+                st.code(narrative_report_path.read_text(encoding="utf-8"), language="json")
+            except Exception as e:
+                st.warning(f"Could not read {narrative_report_path}: {e}")
+
     run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
     if run_qc:
         if not patient_id.strip():
@@ -1252,10 +1278,10 @@ def render_step_3():
                 qc_elevenlabs = {}
 
             cfg = QCPublishConfig(
-                qeeg_dir=Path(qeeg_dir).expanduser(),
-                backend_url=backend_url,
-                cliproxy_url=cliproxy_url,
-                cliproxy_api_key=cliproxy_api_key,
+                qeeg_dir=Path((qeeg_dir or "").strip()).expanduser().resolve(),
+                backend_url=(backend_url or "").strip(),
+                cliproxy_url=(cliproxy_url or "").strip(),
+                cliproxy_api_key=(cliproxy_api_key or "").strip(),
                 max_visual_passes=int(max_passes),
                 auto_fix_images=bool(auto_fix_images),
                 fps=int(fps),

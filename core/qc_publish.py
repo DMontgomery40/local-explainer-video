@@ -87,6 +87,26 @@ def stable_seed(value: str) -> int:
     return zlib.crc32(raw) & 0x7FFFFFFF
 
 
+_RESET_AFTER_RE = re.compile(
+    r"(?i)\b(?:reset|retry)\s+after\s+(\d+)\s*(?:s|sec|secs|second|seconds)\b"
+)
+
+
+def extract_reset_after_seconds(error: BaseException) -> int | None:
+    """Best-effort parse of provider quota/rate-limit hints like 'reset after 48s'."""
+    msg = str(error or "").strip()
+    if not msg:
+        return None
+    m = _RESET_AFTER_RE.search(msg)
+    if not m:
+        return None
+    try:
+        secs = int(m.group(1))
+    except Exception:
+        return None
+    return secs if secs > 0 else None
+
+
 def image_change_metrics(
     original_path: Path,
     edited_path: Path,
@@ -191,8 +211,18 @@ def load_qeeg_ground_truth(*, qeeg_dir: Path, patient_label: str) -> QEGGroundTr
             # Different UIs may have created a patient record without any run yet.
             cur.execute("SELECT 1 FROM patients WHERE lower(label) = lower(?) LIMIT 1", (patient_label,))
             if cur.fetchone() is None:
-                raise QCPublishError(f"No patient found in qEEG Council with label: {patient_label}")
-            raise QCPublishError(f"No runs found in qEEG Council for patient label: {patient_label}")
+                raise QCPublishError(
+                    "No patient record found in qEEG Council (data/app.db).\n"
+                    f"- Label: {patient_label}\n"
+                    f"- DB: {db_path}\n"
+                    "Hint: create the patient in qEEG Council and run the council workflow at least once."
+                )
+            raise QCPublishError(
+                "No runs found in qEEG Council for this patient label.\n"
+                f"- Label: {patient_label}\n"
+                f"- DB: {db_path}\n"
+                "Hint: run the council workflow so Stage 1 (_data_pack.json) and Stage 4 (consolidation) artifacts exist."
+            )
 
         best: QEGGroundTruth | None = None
         checked: list[dict[str, Any]] = []
@@ -431,6 +461,32 @@ def apply_safe_autofixes(
         if isinstance(s, dict) and isinstance(s.get("id"), int):
             by_id[int(s["id"])] = s
 
+    def is_surgical(field: str, find: str, replace: str) -> bool:
+        f = (find or "").strip()
+        r = (replace or "").strip()
+        if not f or not r:
+            return False
+        # Never allow huge rewrites via "safe" autofix.
+        if field == "visual_prompt":
+            # Only allow numeric-only changes (same text, different number tokens).
+            # Example: "… -82% …" -> "… -88% …"
+            if len(f) > 220 or len(r) > 220:
+                return False
+            if not (re.search(r"\\d", f) and re.search(r"\\d", r)):
+                return False
+
+            def _mask_digits(s: str) -> str:
+                return re.sub(r"\\d+", "<N>", s)
+
+            return _mask_digits(f) == _mask_digits(r)
+
+        # narration: allow small phrase replacements or numeric fixes.
+        if len(f) > 120 or len(r) > 120:
+            return False
+        if re.search(r"\\d", f) and re.search(r"\\d", r):
+            return True
+        return len(f) <= 40 and len(r) <= 40
+
     for f in fixes:
         scene_id = f.get("scene_id")
         field = f.get("field")
@@ -448,6 +504,8 @@ def apply_safe_autofixes(
             continue
         if not isinstance(replace, str) or replace == "":
             continue
+        if not is_surgical(field, find, replace):
+            continue
 
         scene = by_id[scene_id]
         current = scene.get(field)
@@ -457,7 +515,7 @@ def apply_safe_autofixes(
             continue
 
         scene[field] = current.replace(find, replace)
-        applied.append(f"Scene {scene_id} {field}: replace {find!r} -> {replace!r}")
+        applied.append(f"Scene {scene_id} {field}: replace {find!r} with {replace!r}")
 
     return plan, applied
 
@@ -672,12 +730,19 @@ def run_gemini_visual_qc(
     parsed = _extract_json_object(text)
     replacements = parsed.get("replacements") if isinstance(parsed.get("replacements"), list) else []
     cleaned: list[dict[str, str]] = []
+
+    def _norm_token(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "")).strip().lower()
+
     for r in replacements:
         if not isinstance(r, dict):
             continue
         frm = r.get("from")
         to = r.get("to")
-        if not (isinstance(frm, str) and frm and isinstance(to, str) and to and frm != to):
+        if not (isinstance(frm, str) and frm and isinstance(to, str) and to):
+            continue
+        # Drop no-op edits (including whitespace/case-only changes).
+        if _norm_token(frm) == _norm_token(to):
             continue
         item: dict[str, str] = {"from": frm, "to": to}
         why = r.get("why")
@@ -695,12 +760,47 @@ def run_gemini_visual_qc(
 
 def _build_image_edit_instruction(replacements: list[dict[str, str]]) -> str:
     parts: list[str] = []
+    has_wrong_number = False
+
+    def _minimize_number_change(frm: str, to: str) -> tuple[str, str]:
+        """Try to reduce a numeric replacement to just the differing token (e.g., 'P300: 13.7 uV' -> '13.7')."""
+        a = frm or ""
+        b = to or ""
+        if not (re.search(r"\d", a) and re.search(r"\d", b)):
+            return (frm, to)
+
+        # Longest common prefix
+        i = 0
+        max_i = min(len(a), len(b))
+        while i < max_i and a[i] == b[i]:
+            i += 1
+
+        # Longest common suffix (avoiding overlap)
+        j = 0
+        max_j = min(len(a) - i, len(b) - i)
+        while j < max_j and a[-(j + 1)] == b[-(j + 1)]:
+            j += 1
+
+        a_mid = a[i : len(a) - j if j else len(a)].strip()
+        b_mid = b[i : len(b) - j if j else len(b)].strip()
+        if not a_mid or not b_mid:
+            return (frm, to)
+        if len(a_mid) > 24 or len(b_mid) > 24:
+            return (frm, to)
+        if not (re.search(r"\d", a_mid) and re.search(r"\d", b_mid)):
+            return (frm, to)
+        return (a_mid, b_mid)
+
     for r in replacements:
         frm = r.get("from")
         to = r.get("to")
         where = (r.get("where") or "").strip()
+        why = (r.get("why") or "").strip().lower()
         if not frm or not to:
             continue
+        if why == "wrong_number":
+            has_wrong_number = True
+            frm, to = _minimize_number_change(frm, to)
         if where:
             parts.append(f'On {where.upper()} side: change "{frm}" to "{to}"')
         else:
@@ -708,6 +808,10 @@ def _build_image_edit_instruction(replacements: list[dict[str, str]]) -> str:
     if not parts:
         return ""
     # Keep it exactly in the style the UI uses; verbose instructions reduce reliability.
+    if has_wrong_number:
+        parts.append(
+            "keep the overall font/style consistent; if the new digits render poorly, slightly adjust font weight/outline for legibility"
+        )
     return "\n".join(parts)
 
 
@@ -793,8 +897,38 @@ def qc_and_publish_project(
     gt = load_qeeg_ground_truth(qeeg_dir=config.qeeg_dir, patient_label=patient_id)
 
     _phase(f"Narrative QC (Opus: {config.opus_model})…")
+    narrative_history: list[dict[str, Any]] = []
+
+    def _log_narrative(res: NarrativeQCResult, *, title: str) -> None:
+        _log(
+            f"{title} pass={res.passed}, critical_issues={len(res.critical_issues)}, safe_fixes={len(res.safe_autofixes)}"
+        )
+        if res.critical_issues:
+            _log(f"{title} critical issues (must be fixed before publish):")
+            for issue in res.critical_issues[:25]:
+                if not isinstance(issue, dict):
+                    continue
+                _log(
+                    f"- scene_id={issue.get('scene_id')} field={issue.get('field')}: {issue.get('problem')}\n"
+                    f"  evidence={issue.get('evidence')}\n"
+                    f"  suggested_fix={issue.get('suggested_fix')}"
+                )
+        if res.safe_autofixes:
+            _log(f"{title} suggested safe fixes (only short numeric/phrase fixes are auto-applied):")
+            for fx in res.safe_autofixes[:25]:
+                if not isinstance(fx, dict):
+                    continue
+                _log(
+                    f"- scene_id={fx.get('scene_id')} field={fx.get('field')} "
+                    f"confidence={fx.get('confidence')} reason={fx.get('reason')}\n"
+                    f"  find={fx.get('find')!r}\n"
+                    f"  replace={fx.get('replace')!r}"
+                )
+
+    _log("Narrative QC note: 'safe fixes' are deterministic string replacements applied to plan.json (no image regeneration).")
     narrative = run_opus_narrative_qc(consolidated_md=gt.consolidated_md, data_pack=gt.data_pack, plan=plan, model=config.opus_model)
-    _log(f"Narrative pass={narrative.passed}, critical_issues={len(narrative.critical_issues)}, safe_fixes={len(narrative.safe_autofixes)}")
+    narrative_history.append(narrative.raw)
+    _log_narrative(narrative, title="Narrative QC:")
 
     plan_before = json.dumps(
         [(s.get("id"), s.get("narration"), s.get("visual_prompt")) for s in (plan.get("scenes") or []) if isinstance(s, dict)],
@@ -814,6 +948,8 @@ def qc_and_publish_project(
                 plan=plan,
                 model=config.opus_model,
             )
+            narrative_history.append(narrative.raw)
+            _log_narrative(narrative, title="Narrative QC (after fixes):")
             _log(
                 f"Narrative pass={narrative.passed}, critical_issues={len(narrative.critical_issues)}, safe_fixes={len(narrative.safe_autofixes)}"
             )
@@ -839,6 +975,25 @@ def qc_and_publish_project(
 
     for line in applied_fixes:
         _log(f"Applied plan fix: {line}")
+
+    # Persist narrative QC trace for transparency (helps debugging "why did it say 6 issues then 0?").
+    try:
+        (project_dir / "qc_narrative_report.json").write_text(
+            json.dumps(
+                {
+                    "patient_id": patient_id,
+                    "run_id": gt.run_id,
+                    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "applied_plan_fixes": applied_fixes,
+                    "iterations": narrative_history,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        _log(f"Warning: failed writing qc_narrative_report.json (non-fatal): {e}")
 
     if narrative.critical_issues:
         _log("Narrative critical issues found (will block publish unless resolved):")
@@ -884,6 +1039,7 @@ def qc_and_publish_project(
 
     visual_edits_applied: list[str] = []
     visual_issues: list[dict[str, Any]] = []
+    prior_edit_attempts_by_scene: dict[int, list[dict[str, str]]] = {}
 
     max_passes = 1 if not config.auto_fix_images else max(1, config.max_visual_passes)
     for pass_idx in range(1, max_passes + 1):
@@ -964,13 +1120,35 @@ def qc_and_publish_project(
                 )
                 continue
 
-            instr = _build_image_edit_instruction(res.replacements)
-            if not instr:
-                continue
-            _log(f"Scene {scene_id}: proposed image edits: {res.replacements}")
+            scene_key = int(scene_id) if isinstance(scene_id, int) else int(i)
+            prior_attempts = prior_edit_attempts_by_scene.setdefault(scene_key, [])
 
             fixed = False
             for attempt_idx in range(1, max(1, int(config.max_image_edit_attempts)) + 1):
+                # After a failed attempt, re-ask Gemini and explicitly avoid repeating the same replacement.
+                if attempt_idx > 1:
+                    scene_context["prior_edit_attempts"] = prior_attempts
+                    res = run_gemini_visual_qc(
+                        cliproxy=cliproxy,
+                        image_path=img_path,
+                        scene_context=scene_context,
+                        data_pack=gt.data_pack,
+                        model=gemini_model_id,
+                    )
+                    if not res.passed and not res.replacements:
+                        raise QCPublishError(
+                            f"Visual QC needs manual review for scene {scene_id} (no deterministic replacements). Notes: {res.notes}"
+                        )
+                    if not res.replacements:
+                        fixed = True
+                        break
+
+                instr = _build_image_edit_instruction(res.replacements)
+                if not instr:
+                    fixed = True
+                    break
+                _log(f"Scene {scene_id}: proposed image edits: {res.replacements}")
+
                 seed = (
                     int(config.image_edit_seed)
                     if config.image_edit_seed is not None
@@ -981,18 +1159,29 @@ def qc_and_publish_project(
                     f"{img_path.stem}__qc_edit_p{pass_idx}_t{attempt_idx}{img_path.suffix}"
                 )
                 _log(f"Scene {scene_id}: applying edit (try {attempt_idx}/{config.max_image_edit_attempts}, seed={seed})")
-                edit_image(
-                    instr,
-                    img_path,
-                    edited_path,
-                    model=config.image_edit_model,
-                    seed=seed,
-                    n=int(config.image_edit_n),
-                    size=config.image_edit_size,
-                    prompt_extend=bool(config.image_edit_prompt_extend),
-                    negative_prompt=str(config.image_edit_negative_prompt),
-                    watermark=bool(config.image_edit_watermark),
-                )
+                while True:
+                    try:
+                        edit_image(
+                            instr,
+                            img_path,
+                            edited_path,
+                            model=config.image_edit_model,
+                            seed=seed,
+                            n=int(config.image_edit_n),
+                            size=config.image_edit_size,
+                            prompt_extend=bool(config.image_edit_prompt_extend),
+                            negative_prompt=str(config.image_edit_negative_prompt),
+                            watermark=bool(config.image_edit_watermark),
+                        )
+                        break
+                    except Exception as e:
+                        wait_s = extract_reset_after_seconds(e)
+                        if wait_s is None:
+                            raise
+                        # Auto-wait and continue (per user preference).
+                        _log(f"Scene {scene_id}: rate limited; waiting {wait_s}s then retrying image edit…")
+                        _phase(f"Rate limited; waiting {wait_s}s to retry image edit (scene {scene_id})…")
+                        time.sleep(float(wait_s) + 2.0)
 
                 try:
                     mean_abs, changed_ratio = image_change_metrics(img_path, edited_path)
@@ -1051,6 +1240,13 @@ def qc_and_publish_project(
                     f"Scene {scene_id}: edit rejected (text_ok={text_ok}, drift_ok={drift_ok}). "
                     f"Remaining replacements: {res2.replacements}"
                 )
+                # Avoid repeating the same phrase again on the next attempt.
+                for attempted in res.replacements:
+                    if isinstance(attempted, dict):
+                        frm = attempted.get("from")
+                        to = attempted.get("to")
+                        if isinstance(frm, str) and isinstance(to, str) and frm and to:
+                            prior_attempts.append({"from": frm, "to": to})
                 # Do not overwrite the original on a failed attempt.
                 try:
                     edited_path.unlink(missing_ok=True)

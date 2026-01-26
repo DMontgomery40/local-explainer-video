@@ -13,6 +13,11 @@ import requests
 
 from core.rate_limiter import image_limiter
 
+# Target dimensions for all generated/edited images (16:9 aspect ratio)
+TARGET_WIDTH = 1664
+TARGET_HEIGHT = 928
+TARGET_SIZE_DASHSCOPE = f"{TARGET_WIDTH}*{TARGET_HEIGHT}"
+
 
 def _log(msg):
     """Debug logging to stderr (visible in Streamlit terminal)."""
@@ -31,6 +36,19 @@ def _get_replicate_client() -> Client:
         _replicate_client = Client(timeout=120)  # 2 minute timeout
         _log("Created Replicate client with 120s timeout")
     return _replicate_client
+
+
+def _ensure_png(path: Path) -> Path:
+    """Convert image to PNG if it's not already (Replicate sometimes returns WebP)."""
+    import subprocess
+    result = subprocess.run(["file", str(path)], capture_output=True, text=True)
+    if "Web/P" in result.stdout or "RIFF" in result.stdout:
+        tmp = path.with_suffix(".tmp.png")
+        subprocess.run(["ffmpeg", "-y", "-i", str(path), "-f", "image2", str(tmp)],
+                      capture_output=True, check=True)
+        tmp.replace(path)
+        _log(f"  Converted WebP to PNG: {path}")
+    return path
 
 
 # Style suffix appended to every image prompt - this is the only context the image model gets
@@ -54,9 +72,10 @@ def _dashscope_endpoint() -> str:
 
 
 def _dashscope_api_key() -> str:
-    key = (os.getenv("DASHSCOPE_API_KEY") or "").strip()
+    # Accept both DASHSCOPE_API_KEY and ALIBABA_API_KEY (same platform, different naming)
+    key = (os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIBABA_API_KEY") or "").strip()
     if not key:
-        raise ValueError("DASHSCOPE_API_KEY is not set (required for DashScope qwen-image-edit-* models).")
+        raise ValueError("DASHSCOPE_API_KEY (or ALIBABA_API_KEY) is not set (required for DashScope qwen-image-edit-* models).")
     return key
 
 
@@ -135,7 +154,7 @@ def _default_image_edit_model() -> str:
         return env_model or "qwen-image-edit-max"
     if env_model:
         return env_model
-    if (os.getenv("DASHSCOPE_API_KEY") or "").strip():
+    if (os.getenv("DASHSCOPE_API_KEY") or os.getenv("ALIBABA_API_KEY") or "").strip():
         return "qwen-image-edit-max"
     return "qwen/qwen-image-edit-2511"
 
@@ -158,7 +177,7 @@ def _edit_image_replicate(
                 "image": files,  # Model expects an array
                 "aspect_ratio": "16:9",
                 "output_format": "png",
-                "go_fast": True,
+                "go_fast": False,
             }
             if seed is not None:
                 inputs["seed"] = int(seed)
@@ -181,6 +200,9 @@ def _edit_image_replicate(
     response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
     response.raise_for_status()
     output_path.write_bytes(response.content)
+
+    # Ensure PNG format (Replicate may return WebP despite output_format: png)
+    _ensure_png(output_path)
 
     return output_path
 
@@ -205,7 +227,8 @@ def _edit_image_dashscope(
     endpoint = _dashscope_endpoint()
     api_key = _dashscope_api_key()
 
-    inferred_size = size or _infer_dashscope_size(input_image_paths[-1])
+    # Always use target dimensions for consistent output (size arg can override)
+    inferred_size = size or TARGET_SIZE_DASHSCOPE
     params: dict = {
         "n": int(n),
         "negative_prompt": negative_prompt if isinstance(negative_prompt, str) else " ",
@@ -315,7 +338,7 @@ def generate_image(
             "prompt": full_prompt,
             "aspect_ratio": "16:9",
             "output_format": "png",
-            "go_fast": True,
+            "go_fast": False,
             "guidance": 4,
             "num_inference_steps": 40,
         }
@@ -367,6 +390,9 @@ def generate_image(
         _log(f"  FILE WRITE FAILED: {type(e).__name__}: {e}")
         _log(f"  Traceback:\n{traceback.format_exc()}")
         raise
+
+    # Ensure PNG format (Replicate may return WebP despite output_format: png)
+    _ensure_png(output_path)
 
     return output_path
 

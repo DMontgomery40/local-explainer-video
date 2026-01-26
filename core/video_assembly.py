@@ -8,6 +8,24 @@ from moviepy import (
     concatenate_videoclips,
 )
 
+# Target dimensions for video output (must match image_gen.py)
+TARGET_WIDTH = 1664
+TARGET_HEIGHT = 928
+
+
+def _ensure_dimensions(clip: ImageClip, scene_id: int = 0) -> ImageClip:
+    """
+    Resize clip to target dimensions if mismatched.
+
+    Prevents video assembly failures from dimension inconsistencies
+    (e.g., edited images returning different sizes).
+    """
+    w, h = clip.size
+    if w != TARGET_WIDTH or h != TARGET_HEIGHT:
+        print(f"  Scene {scene_id}: resizing {w}x{h} -> {TARGET_WIDTH}x{TARGET_HEIGHT}")
+        return clip.resized((TARGET_WIDTH, TARGET_HEIGHT))
+    return clip
+
 
 def _archive_existing_video(output_path: Path, project_dir: Path) -> Path | None:
     """
@@ -83,8 +101,9 @@ def assemble_video(
                 print(f"Skipping scene {scene.get('id', i)}: no image")
                 continue
 
-            # Create image clip
+            # Create image clip and ensure correct dimensions
             image_clip = ImageClip(str(image_path))
+            image_clip = _ensure_dimensions(image_clip, scene.get('id', i))
 
             # Add audio if available
             if audio_path and Path(audio_path).exists():
@@ -175,8 +194,9 @@ def preview_scene(
     audio_clip = None
 
     try:
-        # Create video from single scene
+        # Create video from single scene and ensure correct dimensions
         image_clip = ImageClip(str(image_path))
+        image_clip = _ensure_dimensions(image_clip, scene_id)
 
         if audio_path and Path(audio_path).exists():
             audio_clip = AudioFileClip(str(audio_path))

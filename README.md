@@ -199,6 +199,10 @@ Run it from the UI:
 - Go to **Step 3: Render Video**
 - Click **Run QC + Publish**
 
+Notes:
+- If Streamlit restarts, re-load the project; if an MP4 exists, the app jumps straight to Step 3 so you can resume QC without re-rendering first.
+- If image-edit hits a provider quota/rate-limit (e.g., “reset after 48s”), QC auto-waits and continues.
+
 Or run it from the CLI:
 
 ```bash
