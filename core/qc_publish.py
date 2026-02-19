@@ -370,7 +370,7 @@ def run_opus_narrative_qc(
     consolidated_md: str,
     data_pack: dict[str, Any],
     plan: dict[str, Any],
-    model: str = "claude-opus-4-5",
+    model: str = "claude-opus-4-6",
     max_tokens: int = 3000,
 ) -> NarrativeQCResult:
     system = _load_prompt_text("qc_opus_system")
@@ -821,7 +821,7 @@ class QCPublishConfig:
     backend_url: str
     cliproxy_url: str
     cliproxy_api_key: str
-    opus_model: str = "claude-opus-4-5"
+    opus_model: str = "claude-opus-4-6"
     gemini_model: str = "gemini-3-flash"
     max_visual_passes: int = 5
     max_image_edit_attempts: int = 3

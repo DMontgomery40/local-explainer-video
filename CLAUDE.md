@@ -33,7 +33,7 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 **Core modules**:
 - `core/director.py` - LLM-based storyboard generation (5-15 scenes from clinical text)
-- `core/image_gen.py` - Replicate API (Qwen Image), with style suffix auto-appended
+- `core/image_gen.py` - Replicate API image generation (Qwen + Imagen 4), with style suffix auto-appended
 - `core/voice_gen.py` - Kokoro (local) / ElevenLabs / OpenAI TTS
 - `core/video_assembly.py` - MoviePy + ffmpeg, hard cuts only, 24fps, GPU acceleration
 
@@ -49,7 +49,7 @@ clinician portal sync folder.
 - Numeric truth: qEEG Council **Stage 1 `_data_pack.json`**
 
 **Models**
-- Narrative judge: **Claude Opus 4.5** (Anthropic API)
+- Narrative judge: **Claude Opus 4.6** (Anthropic API)
 - Visual judge: **Gemini 3 Flash** via **CLIProxyAPI** (vision over rendered slide PNGs)
 - Fixes: **Qwen Image Edit** (Replicate) — surgical edits only
 
@@ -85,7 +85,7 @@ Run it:
 ## Image Action Gotchas (Generate vs Edit)
 
 These are intentionally different codepaths/models:
-- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → `qwen/qwen-image-2512` (new image)
+- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → selected Replicate model (`qwen/qwen-image-2512` or `google/imagen-4`) (new image)
 - **Edit Image** → `core/image_gen.edit_image()` → DashScope `qwen-image-edit-max` (if `DASHSCOPE_API_KEY` is set) or Replicate `qwen/qwen-image-edit-2511` (fallback). Override via sidebar **Image Edit** or `IMAGE_EDIT_MODEL`.
 - **Refine Prompt** → prompt rewrite step; avoid for QC automation
 
@@ -184,6 +184,7 @@ ElevenLabs (Flash v2.5) notes:
 Base pipeline (`.env`):
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (director)
 - `REPLICATE_API_TOKEN` (image gen/edit)
+- `IMAGE_MODEL` (optional default image model; e.g., `qwen/qwen-image-2512` or `google/imagen-4`)
 - `ELEVENLABS_API_KEY` (optional; required if selecting ElevenLabs TTS)
 
 QC + Publish (optional):

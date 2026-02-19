@@ -1,8 +1,9 @@
-"""Image generation/editing using Replicate (Qwen Image) and DashScope (Alibaba Model Studio)."""
+"""Image generation/editing using Replicate (Qwen/Imagen) and DashScope."""
 
 from pathlib import Path
 import base64
 import os
+import re
 import traceback
 import sys
 from contextlib import ExitStack
@@ -17,6 +18,14 @@ from core.rate_limiter import image_limiter
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 TARGET_SIZE_DASHSCOPE = f"{TARGET_WIDTH}*{TARGET_HEIGHT}"
+
+# Replicate text-to-image models exposed in this app.
+DEFAULT_IMAGE_GEN_MODEL = "qwen/qwen-image-2512"
+IMAGEN_4_MODEL = "google/imagen-4"
+
+# Marker Claude can emit in visual_prompt to force EEG map img2img conditioning.
+EEG_10_20_REF_MARKER = "[[USE_EEG_10_20_REF]]"
+EEG_10_20_REFERENCE_IMAGE = Path(__file__).parent.parent / "prompts" / "qEEG-site-mapping-reference.JPG"
 
 
 def _log(msg):
@@ -51,8 +60,20 @@ def _ensure_png(path: Path) -> Path:
     return path
 
 
-# Style suffix appended to every image prompt - this is the only context the image model gets
-STYLE_SUFFIX = ", patient-friendly medical education video, warm and reassuring aesthetic, premium healthcare feel, soft lighting, modern and approachable, never clinical or scary, 16:9 aspect ratio"
+# Style suffix appended to every image prompt - this is the only context the image model gets.
+STYLE_SUFFIX = (
+    ", patient-friendly medical education video, warm and reassuring aesthetic, premium healthcare feel, "
+    "soft lighting, modern and approachable, never clinical or scary, 16:9 aspect ratio"
+)
+
+# Optional anatomy reminder for scenes that depict EEG topography/electrodes.
+# This is intentionally guidance so composition and camera angle can still vary.
+EEG_10_20_GUIDE_SUFFIX = (
+    ", if electrodes or brain-map labels are shown, follow standard EEG 10-20 topology as anatomical guidance: "
+    "front landmark is nasion and rear landmark is inion; left/right ear references are A1/A2; "
+    "front row Fp1 Fp2; next row F7 F3 Fz F4 F8; middle row T3 C3 Cz C4 T4; "
+    "posterior row T5 P3 Pz P4 T6; occipital row O1 O2; preserve relative neighborhoods"
+)
 
 # DashScope (Alibaba Model Studio) endpoints for Qwen image edit models.
 # NOTE: Beijing + Singapore have separate API keys and endpoints (cross-region calls fail).
@@ -137,6 +158,127 @@ def _extract_dashscope_image_urls(payload: dict) -> list[str]:
             if isinstance(img, str) and img.strip():
                 urls.append(img.strip())
     return urls
+
+
+def _normalize_model_slug(model: str | None) -> str:
+    """Strip an optional Replicate version suffix (owner/model:version -> owner/model)."""
+    return str(model or "").split(":", 1)[0].strip().lower()
+
+
+def _is_qwen_generation_model(model: str | None) -> bool:
+    normalized = _normalize_model_slug(model)
+    return normalized.startswith("qwen/qwen-image")
+
+
+def _strip_eeg_marker(prompt: str) -> tuple[str, bool]:
+    text = str(prompt or "")
+    has_marker = EEG_10_20_REF_MARKER in text
+    if not has_marker:
+        return text, False
+    cleaned = text.replace(EEG_10_20_REF_MARKER, " ")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned, True
+
+
+def _prompt_has_eeg_topology_keywords(prompt: str) -> bool:
+    """Fallback detector when marker is missing."""
+    text = str(prompt or "").lower()
+    if not text:
+        return False
+    keyword_patterns = [
+        r"\beeg\b",
+        r"\b10-20\b",
+        r"\belectrode",
+        r"\btopograph",
+        r"\bbrain map\b",
+        r"\bconnectivity\b",
+        r"\bcoherence\b",
+        r"\bfp1\b|\bfp2\b|\bf7\b|\bf3\b|\bfz\b|\bf4\b|\bf8\b",
+        r"\bt3\b|\bc3\b|\bcz\b|\bc4\b|\bt4\b|\bt5\b|\bp3\b|\bpz\b|\bp4\b|\bt6\b",
+        r"\bo1\b|\bo2\b|\ba1\b|\ba2\b",
+    ]
+    return any(re.search(p, text) for p in keyword_patterns)
+
+
+def _is_text_dense_prompt(prompt: str) -> bool:
+    text = str(prompt or "")
+    if not text:
+        return False
+    quote_count = text.count('"')
+    numeric_tokens = re.findall(r"\b\d+(?:\.\d+)?(?:ms|hz|%|µv|uv|sec|s)?\b", text, flags=re.IGNORECASE)
+    lowered = text.lower()
+    text_keywords = [
+        "title",
+        "subtitle",
+        "label",
+        "caption",
+        "timeline",
+        "chart",
+        "infographic",
+        "session",
+        "ms",
+        "hz",
+        "µv",
+        "uv",
+        "%",
+    ]
+    keyword_hits = sum(1 for k in text_keywords if k in lowered)
+    return quote_count >= 4 or len(numeric_tokens) >= 4 or keyword_hits >= 3
+
+
+def default_qwen_guidance_for_prompt(prompt: str) -> float:
+    """
+    Adaptive guidance policy:
+    - text-dense technical prompts: 8.0
+    - conceptual/brain prompts: 10.0
+    """
+    return 8.0 if _is_text_dense_prompt(prompt) else 10.0
+
+
+def _default_qwen_negative_prompt(prompt: str) -> str:
+    base = [
+        "blurry",
+        "low resolution",
+        "jpeg artifacts",
+        "noisy image",
+        "oversaturated",
+        "overprocessed",
+        "watermark",
+        "logo",
+        "signature",
+        "border",
+        "cropped text",
+        "cut-off text",
+        "illegible text",
+        "gibberish text",
+        "misspelled words",
+        "duplicated words",
+        "random characters",
+    ]
+
+    text_dense = [
+        "incorrect numbers",
+        "wrong units",
+        "inconsistent labels",
+        "extra unlabeled numbers",
+        "malformed typography",
+        "overlapping text blocks",
+        "warped letters",
+        "mirrored text",
+    ]
+    concept = [
+        "anatomical distortions",
+        "deformed hands",
+        "extra limbs",
+        "uncanny face",
+        "plastic skin",
+    ]
+    selected = base + (text_dense if _is_text_dense_prompt(prompt) else concept)
+    # Keep prompt concise to avoid over-constraining/attenuation.
+    merged = ", ".join(dict.fromkeys(selected))
+    if len(merged) > 450:
+        merged = merged[:450].rstrip(", ")
+    return merged or " "
 
 
 def _default_image_edit_model() -> str:
@@ -296,87 +438,130 @@ def _edit_image_dashscope(
     return output_path
 
 
-def generate_image(
-    prompt: str,
-    output_path: str | Path,
-    model: str = "qwen/qwen-image-2512",
-    apply_style: bool = True,
-    seed: int | None = None,
-) -> Path:
+def _build_generate_inputs(
+    model: str,
+    full_prompt: str,
+    seed: int | None,
+    *,
+    guidance: float | None,
+    negative_prompt: str | None,
+) -> dict:
     """
-    Generate an image using Qwen Image 2512 model.
-
-    $0.02/image, ~7s, strongest text rendering available.
-
-    Args:
-        prompt: The image generation prompt
-        output_path: Where to save the generated image
-        model: Replicate model identifier
-        apply_style: Whether to append the style suffix
-
-    Returns:
-        Path to the saved image
+    Build model-specific inputs for Replicate image generation.
     """
-    _log(f"generate_image() called")
-    _log(f"  output_path: {output_path}")
-    _log(f"  model: {model}")
-    _log(f"  prompt (first 100 chars): {prompt[:100]}...")
-
-    output_path = Path(output_path)
-    _log(f"  Creating parent dir: {output_path.parent}")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Apply style suffix for consistent aesthetic
-    full_prompt = f"{prompt}{STYLE_SUFFIX}" if apply_style else prompt
-    _log(f"  Full prompt length: {len(full_prompt)} chars")
-
-    # Run the model with rate limiting and retry
-    def _call_replicate():
-        client = _get_replicate_client()
-        _log(f"  Calling client.run() with model: {model} (120s timeout)")
-        inputs: dict = {
+    normalized = _normalize_model_slug(model)
+    if normalized == IMAGEN_4_MODEL:
+        if seed is not None:
+            _log("  seed provided but ignored for google/imagen-4 (not in schema)")
+        return {
             "prompt": full_prompt,
             "aspect_ratio": "16:9",
             "output_format": "png",
-            "go_fast": False,
-            "guidance": 4,
-            "num_inference_steps": 40,
+            "safety_filter_level": "block_only_high",
         }
-        if seed is not None:
-            inputs["seed"] = int(seed)
-        return client.run(
-            model,
-            input=inputs,
-        )
+
+    resolved_guidance = float(guidance) if guidance is not None else default_qwen_guidance_for_prompt(full_prompt)
+    resolved_negative = str(negative_prompt) if isinstance(negative_prompt, str) else _default_qwen_negative_prompt(full_prompt)
+    if not resolved_negative.strip():
+        # Recommended by Qwen examples when not using a negative prompt.
+        resolved_negative = " "
+
+    inputs: dict = {
+        "prompt": full_prompt,
+        "aspect_ratio": "16:9",
+        "output_format": "png",
+        "go_fast": False,
+        "guidance": max(0.0, min(10.0, resolved_guidance)),
+        "num_inference_steps": 50,
+        "negative_prompt": resolved_negative,
+    }
+    if seed is not None:
+        inputs["seed"] = int(seed)
+    return inputs
+
+
+def generate_image(
+    prompt: str,
+    output_path: str | Path,
+    model: str = DEFAULT_IMAGE_GEN_MODEL,
+    apply_style: bool = True,
+    use_eeg_10_20_guide: bool = False,
+    seed: int | None = None,
+    *,
+    guidance: float | None = None,
+    negative_prompt: str | None = None,
+    reference_image_path: str | Path | None = None,
+    reference_strength: float | None = None,
+) -> Path:
+    """
+    Generate an image using a Replicate text-to-image model.
+    """
+    _log("generate_image() called")
+    _log(f"  output_path: {output_path}")
+    _log(f"  model: {model}")
+    _log(f"  prompt (first 100 chars): {prompt[:100]}...")
+    _log(f"  guidance override: {guidance}")
+    _log(f"  has reference image: {bool(reference_image_path)}")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Apply style suffix for consistent aesthetic.
+    full_prompt = f"{prompt}{STYLE_SUFFIX}" if apply_style else prompt
+    if use_eeg_10_20_guide:
+        full_prompt = f"{full_prompt}{EEG_10_20_GUIDE_SUFFIX}"
+        _log("  Added EEG 10-20 text guidance suffix")
+    _log(f"  Full prompt length: {len(full_prompt)} chars")
+
+    normalized = _normalize_model_slug(model)
+
+    def _call_replicate():
+        client = _get_replicate_client()
+        with ExitStack() as stack:
+            _log(f"  Calling client.run() with model: {model} (120s timeout)")
+            inputs = _build_generate_inputs(
+                model,
+                full_prompt,
+                seed,
+                guidance=guidance,
+                negative_prompt=negative_prompt,
+            )
+            if _is_qwen_generation_model(model) and reference_image_path:
+                ref_path = Path(reference_image_path)
+                if ref_path.exists():
+                    inputs["image"] = stack.enter_context(open(ref_path, "rb"))
+                    # Replicate schema: strength in [0, 1], 1.0 is full destruction.
+                    resolved_strength = 1.0 if reference_strength is None else float(reference_strength)
+                    inputs["strength"] = max(0.0, min(1.0, resolved_strength))
+                    _log(f"  Using img2img reference: {ref_path.name} (strength={inputs['strength']})")
+                else:
+                    _log(f"  Reference image missing, skipping img2img: {ref_path}")
+            elif normalized == IMAGEN_4_MODEL and reference_image_path:
+                _log("  Reference image requested but ignored for Imagen 4 (text-only schema)")
+            return client.run(
+                model,
+                input=inputs,
+            )
 
     try:
-        _log(f"  Starting API call with retry...")
         output = image_limiter.call_with_retry(_call_replicate)
         _log(f"  API call succeeded, output type: {type(output)}")
-        _log(f"  Output value: {output}")
     except Exception as e:
         _log(f"  API CALL FAILED: {type(e).__name__}: {e}")
         _log(f"  Traceback:\n{traceback.format_exc()}")
         raise
 
-    # Handle different output formats from Replicate
+    # Handle different output formats from Replicate.
     if isinstance(output, list):
         image_url = output[0]
-        _log(f"  Output was list, first element: {image_url}")
-    elif hasattr(output, 'url'):
+    elif hasattr(output, "url"):
         image_url = output.url
-        _log(f"  Output had .url attribute: {image_url}")
     else:
         image_url = str(output)
-        _log(f"  Output stringified: {image_url}")
 
-    # Download and save the image
-    _log(f"  Downloading image from URL...")
     try:
         response = requests.get(image_url, timeout=(5, 60))  # (connect, read)
-        _log(f"  Download response status: {response.status_code}")
         response.raise_for_status()
-        _log(f"  Downloaded {len(response.content)} bytes")
     except Exception as e:
         _log(f"  DOWNLOAD FAILED: {type(e).__name__}: {e}")
         _log(f"  Traceback:\n{traceback.format_exc()}")
@@ -384,16 +569,13 @@ def generate_image(
 
     try:
         output_path.write_bytes(response.content)
-        _log(f"  Saved to: {output_path}")
-        _log(f"  File exists: {output_path.exists()}, size: {output_path.stat().st_size if output_path.exists() else 'N/A'}")
     except Exception as e:
         _log(f"  FILE WRITE FAILED: {type(e).__name__}: {e}")
         _log(f"  Traceback:\n{traceback.format_exc()}")
         raise
 
-    # Ensure PNG format (Replicate may return WebP despite output_format: png)
+    # Ensure PNG format (Replicate may return WebP despite output_format: png).
     _ensure_png(output_path)
-
     return output_path
 
 
@@ -462,6 +644,11 @@ def edit_image(
 def generate_scene_image(
     scene: dict,
     project_dir: Path,
+    model: str = DEFAULT_IMAGE_GEN_MODEL,
+    use_eeg_10_20_guide: bool = False,
+    guidance: float | None = None,
+    negative_prompt: str | None = None,
+    force_use_eeg_ref: bool | None = None,
 ) -> Path:
     """
     Generate an image for a specific scene.
@@ -469,29 +656,64 @@ def generate_scene_image(
     Args:
         scene: Scene dictionary with 'id' and 'visual_prompt'
         project_dir: Project directory for saving assets
+        model: Replicate image model id
+        use_eeg_10_20_guide: Whether to append 10-20 textual guidance
+        guidance: Optional guidance override
+        negative_prompt: Optional negative prompt override
+        force_use_eeg_ref: Optional explicit toggle for EEG reference img2img
 
     Returns:
         Path to the generated image
     """
-    _log(f"=== generate_scene_image() START ===")
+    _log("=== generate_scene_image() START ===")
     _log(f"  scene keys: {list(scene.keys())}")
     _log(f"  project_dir: {project_dir}")
 
     scene_id = scene.get("id")
     _log(f"  scene_id: {scene_id}")
 
-    prompt = scene.get("visual_prompt")
-    if not prompt:
-        _log(f"  ERROR: No visual_prompt in scene!")
+    prompt_raw = scene.get("visual_prompt")
+    if not prompt_raw:
+        _log("  ERROR: No visual_prompt in scene!")
         raise ValueError(f"Scene {scene_id} has no visual_prompt")
+    prompt, has_marker = _strip_eeg_marker(str(prompt_raw))
 
     _log(f"  visual_prompt length: {len(prompt)}")
+    _log(f"  image model: {model}")
+    _log(f"  EEG 10-20 textual guide: {use_eeg_10_20_guide}")
+    _log(f"  marker present: {has_marker}")
 
     output_path = project_dir / "images" / f"scene_{scene_id:03d}.png"
     _log(f"  output_path: {output_path}")
 
+    use_reference = False
+    if _is_qwen_generation_model(model):
+        if force_use_eeg_ref is not None:
+            use_reference = bool(force_use_eeg_ref)
+        else:
+            # Primary trigger is explicit marker from Claude. Fallback helps with legacy prompts.
+            use_reference = has_marker or _prompt_has_eeg_topology_keywords(prompt)
+
+    ref_path: Path | None = None
+    ref_strength: float | None = None
+    if use_reference:
+        ref_path = EEG_10_20_REFERENCE_IMAGE
+        ref_strength = 1.0
+
+    guidance_value = float(guidance) if guidance is not None else default_qwen_guidance_for_prompt(prompt)
+    negative_value = negative_prompt if isinstance(negative_prompt, str) else _default_qwen_negative_prompt(prompt)
+
     try:
-        result = generate_image(prompt, output_path)
+        result = generate_image(
+            prompt,
+            output_path,
+            model=model,
+            use_eeg_10_20_guide=use_eeg_10_20_guide,
+            guidance=guidance_value,
+            negative_prompt=negative_value,
+            reference_image_path=ref_path,
+            reference_strength=ref_strength,
+        )
         _log(f"=== generate_scene_image() SUCCESS: {result} ===")
         return result
     except Exception as e:

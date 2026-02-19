@@ -20,7 +20,14 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from core.director import generate_storyboard, refine_prompt, refine_narration
-from core.image_gen import generate_scene_image, edit_image
+from core.image_gen import (
+    DEFAULT_IMAGE_GEN_MODEL,
+    EEG_10_20_REF_MARKER,
+    IMAGEN_4_MODEL,
+    default_qwen_guidance_for_prompt,
+    edit_image,
+    generate_scene_image,
+)
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -55,6 +62,7 @@ load_dotenv(override=True)
 # Constants
 PROJECTS_DIR = Path(__file__).parent / "projects"
 PROJECTS_DIR.mkdir(exist_ok=True)
+IMAGE_GEN_MODELS = [DEFAULT_IMAGE_GEN_MODEL, IMAGEN_4_MODEL]
 
 
 def check_api_keys() -> dict[str, bool]:
@@ -108,6 +116,32 @@ def save_plan(project_dir: Path, plan: dict) -> None:
     plan_path.write_text(json.dumps(plan, indent=2))
 
 
+def _normalize_image_model(model: str | None) -> str:
+    """Normalize model id, defaulting to the standard generator."""
+    value = str(model or "").strip()
+    return value or DEFAULT_IMAGE_GEN_MODEL
+
+
+def _image_model_options(current_model: str | None = None) -> list[str]:
+    """Return selectable image models, preserving unknown legacy/custom values."""
+    options = list(IMAGE_GEN_MODELS)
+    current = _normalize_image_model(current_model)
+    if current not in options:
+        options.insert(0, current)
+    return options
+
+
+def _plan_image_model(plan: dict | None, fallback: str | None = None) -> str:
+    """Resolve image model from plan meta with fallback to UI/default."""
+    if isinstance(plan, dict):
+        meta = plan.get("meta")
+        if isinstance(meta, dict):
+            plan_model = str(meta.get("image_model") or "").strip()
+            if plan_model:
+                return plan_model
+    return _normalize_image_model(fallback)
+
+
 def init_session_state():
     """Initialize Streamlit session state."""
     if "step" not in st.session_state:
@@ -142,6 +176,27 @@ def init_session_state():
         st.session_state.tts_elevenlabs_style = DEFAULT_ELEVENLABS_STYLE
     if "tts_elevenlabs_use_speaker_boost" not in st.session_state:
         st.session_state.tts_elevenlabs_use_speaker_boost = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST
+
+    # Image generation model (used for Generate/Regenerate Image and batch image generation).
+    if "image_model" not in st.session_state:
+        st.session_state.image_model = _normalize_image_model(os.getenv("IMAGE_MODEL"))
+    if "use_eeg_10_20_guide" not in st.session_state:
+        st.session_state.use_eeg_10_20_guide = (
+            str(os.getenv("USE_EEG_10_20_GUIDE", "")).strip().lower() in {"1", "true", "yes", "on"}
+        )
+    if "sync_image_model_from_plan" not in st.session_state:
+        st.session_state.sync_image_model_from_plan = False
+    if st.session_state.sync_image_model_from_plan:
+        st.session_state.image_model = _plan_image_model(
+            st.session_state.get("plan"),
+            fallback=st.session_state.image_model,
+        )
+        plan = st.session_state.get("plan")
+        if isinstance(plan, dict):
+            meta = plan.get("meta")
+            if isinstance(meta, dict) and "use_eeg_10_20_guide" in meta:
+                st.session_state.use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide"))
+        st.session_state.sync_image_model_from_plan = False
 
     # Image edit model (used for both UI "Edit Image" and QC auto-fix slide text).
     if "image_edit_model" not in st.session_state:
@@ -195,6 +250,40 @@ def _tts_kwargs_from_state() -> dict:
     return kwargs
 
 
+def _image_kwargs_from_state() -> dict:
+    """Build kwargs for generate_scene_image() based on current sidebar settings."""
+    return {
+        "model": _normalize_image_model(st.session_state.image_model),
+        "use_eeg_10_20_guide": bool(st.session_state.use_eeg_10_20_guide),
+    }
+
+
+def _scene_generation_overrides(scene: dict) -> dict:
+    """Return persisted per-scene generation overrides (if any)."""
+    overrides = scene.get("gen_overrides")
+    return overrides if isinstance(overrides, dict) else {}
+
+
+def _scene_image_kwargs(scene: dict) -> dict:
+    """Build kwargs for generate_scene_image() including per-scene overrides."""
+    kwargs = dict(_image_kwargs_from_state())
+    overrides = _scene_generation_overrides(scene)
+
+    guidance = overrides.get("guidance")
+    if isinstance(guidance, (int, float)):
+        kwargs["guidance"] = float(guidance)
+
+    negative_prompt = overrides.get("negative_prompt")
+    if isinstance(negative_prompt, str) and negative_prompt.strip():
+        kwargs["negative_prompt"] = negative_prompt
+
+    force_use_eeg_ref = overrides.get("force_use_eeg_ref")
+    if isinstance(force_use_eeg_ref, bool):
+        kwargs["force_use_eeg_ref"] = force_use_eeg_ref
+
+    return kwargs
+
+
 def get_existing_projects() -> list[str]:
     """Get list of existing project folders."""
     if not PROJECTS_DIR.exists():
@@ -224,6 +313,33 @@ def render_sidebar():
             st.warning("REPLICATE_API_TOKEN missing (required for image generation).")
         if not (keys.get("openai") or keys.get("anthropic")):
             st.warning("Missing LLM key (set OPENAI_API_KEY or ANTHROPIC_API_KEY).")
+
+        st.divider()
+
+        # Image generation settings
+        st.subheader("Image Generation")
+        image_model_options = _image_model_options(st.session_state.image_model)
+        if st.session_state.image_model not in image_model_options:
+            st.session_state.image_model = image_model_options[0]
+        st.selectbox(
+            "Image model",
+            options=image_model_options,
+            key="image_model",
+            help="Used for Generate/Regenerate Image and batch image generation.",
+        )
+        st.checkbox(
+            "Use EEG 10-20 anatomical guide",
+            key="use_eeg_10_20_guide",
+            help=(
+                "Appends a structural 10-20 placement reminder to each image prompt. "
+                "This is guidance only (camera angles/composition still vary)."
+            ),
+        )
+        if st.session_state.image_model == IMAGEN_4_MODEL and st.session_state.use_eeg_10_20_guide:
+            st.caption(
+                "Note: Replicate Imagen 4 currently accepts text prompts only (no reference-image input), "
+                "so the 10-20 map is injected as text guidance."
+            )
 
         st.divider()
 
@@ -299,6 +415,7 @@ def render_sidebar():
                     if plan:
                         st.session_state.project_dir = project_dir
                         st.session_state.plan = plan
+                        st.session_state.sync_image_model_from_plan = True
                         # If a rendered video already exists, jump straight to Render/QC (Step 3)
                         # so the user can resume QC without re-rendering.
                         try:
@@ -545,7 +662,8 @@ def render_step_1():
                         "project_name": project_dir.name,
                         "created_utc": datetime.utcnow().isoformat(),
                         "llm_provider": provider,
-                        "image_model": "qwen/qwen-image-2512",
+                        "image_model": _normalize_image_model(st.session_state.image_model),
+                        "use_eeg_10_20_guide": bool(st.session_state.use_eeg_10_20_guide),
                         "input_text": input_text,
                     },
                     "scenes": scenes,
@@ -572,6 +690,16 @@ def render_step_2():
     plan = st.session_state.plan
     project_dir = st.session_state.project_dir
     scenes = plan["scenes"]
+    image_model = _normalize_image_model(st.session_state.image_model)
+    use_eeg_10_20_guide = bool(st.session_state.use_eeg_10_20_guide)
+    meta = plan.setdefault("meta", {})
+    if (
+        meta.get("image_model") != image_model
+        or bool(meta.get("use_eeg_10_20_guide")) != use_eeg_10_20_guide
+    ):
+        meta["image_model"] = image_model
+        meta["use_eeg_10_20_guide"] = use_eeg_10_20_guide
+        save_plan(project_dir, plan)
 
     # Back button
     if st.button("← Back to Input"):
@@ -779,6 +907,59 @@ def render_step_2():
             with col2:
                 # Image preview and generation
                 st.subheader("Image")
+                overrides = _scene_generation_overrides(scene)
+                is_qwen_model = _normalize_image_model(st.session_state.image_model).startswith("qwen/qwen-image")
+                has_ref_marker = EEG_10_20_REF_MARKER in str(scene.get("visual_prompt", ""))
+
+                if has_ref_marker:
+                    st.caption("EEG reference marker detected in prompt; brain-map reference image will be attached automatically.")
+
+                if is_qwen_model:
+                    default_guidance = default_qwen_guidance_for_prompt(str(scene.get("visual_prompt", "")))
+                    current_guidance = overrides.get("guidance")
+                    guidance_value = (
+                        float(current_guidance)
+                        if isinstance(current_guidance, (int, float))
+                        else float(default_guidance)
+                    )
+                    new_guidance = st.slider(
+                        "Guidance",
+                        min_value=0.0,
+                        max_value=10.0,
+                        value=guidance_value,
+                        step=0.1,
+                        key=f"scene_guidance_{scene_uid}",
+                        help="Per-scene prompt adherence for Qwen image generation.",
+                    )
+                    if abs(new_guidance - guidance_value) > 1e-9:
+                        scene.setdefault("gen_overrides", {})["guidance"] = float(new_guidance)
+                        save_plan(project_dir, plan)
+
+                    neg_value = overrides.get("negative_prompt", "")
+                    if not isinstance(neg_value, str):
+                        neg_value = ""
+                    new_neg = st.text_input(
+                        "Negative prompt (scene override)",
+                        value=neg_value,
+                        key=f"scene_negative_prompt_{scene_uid}",
+                        help="Optional scene-specific negative prompt. Leave blank to use the default strategy.",
+                    )
+                    if new_neg != neg_value:
+                        scene.setdefault("gen_overrides", {})["negative_prompt"] = new_neg
+                        save_plan(project_dir, plan)
+
+                    force_ref_default = bool(overrides.get("force_use_eeg_ref", False))
+                    force_ref_new = st.checkbox(
+                        "Force EEG 10-20 reference image (strength 1.0)",
+                        value=force_ref_default,
+                        key=f"scene_force_eeg_ref_{scene_uid}",
+                        help="Uses prompts/qEEG-site-mapping-reference.JPG only for this scene.",
+                    )
+                    if force_ref_new != force_ref_default:
+                        scene.setdefault("gen_overrides", {})["force_use_eeg_ref"] = bool(force_ref_new)
+                        save_plan(project_dir, plan)
+                else:
+                    st.caption("Per-scene guidance/negative controls are available when Qwen image model is selected.")
 
                 if scene.get("image_path") and Path(scene["image_path"]).exists():
                     st.image(scene["image_path"], use_container_width=True)
@@ -786,7 +967,7 @@ def render_step_2():
                     if st.button("Regenerate Image", key=f"regen_image_{scene_uid}"):
                         with st.spinner("Generating image..."):
                             try:
-                                path = generate_scene_image(scene, project_dir)
+                                path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
                                 scene["image_path"] = str(path)
                                 save_plan(project_dir, plan)
                                 st.rerun()
@@ -798,7 +979,7 @@ def render_step_2():
                     if st.button("Generate Image", key=f"gen_image_{scene_uid}", type="primary"):
                         with st.spinner("Generating image..."):
                             try:
-                                path = generate_scene_image(scene, project_dir)
+                                path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
                                 scene["image_path"] = str(path)
                                 save_plan(project_dir, plan)
                                 st.rerun()
@@ -878,7 +1059,7 @@ def render_step_2():
                 if not has_image:
                     status.text(f"Generating image {i+1}/{len(scenes)}: {scene['title'][:30]}...")
                     try:
-                        path = generate_scene_image(scene, project_dir)
+                        path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
                         scene["image_path"] = str(path)
                         save_plan(project_dir, plan)
                         generated += 1
@@ -967,6 +1148,7 @@ def render_step_2():
 
     if st.button("Regenerate Everything (Images + Audio)", type="primary", key="regen_everything_parallel"):
         tts_kwargs = _tts_kwargs_from_state()
+        image_kwargs = _image_kwargs_from_state()
         total = len(scenes)
         if total == 0:
             st.warning("No scenes found.")
@@ -997,7 +1179,19 @@ def render_step_2():
                 for i, scene in enumerate(scenes):
                     sid = int(scene.get("id", i))
                     try:
-                        path = generate_scene_image(scene, project_dir)
+                        scene_kwargs = dict(image_kwargs)
+                        scene_overrides = _scene_generation_overrides(scene)
+                        guidance_override = scene_overrides.get("guidance")
+                        if isinstance(guidance_override, (int, float)):
+                            scene_kwargs["guidance"] = float(guidance_override)
+                        negative_override = scene_overrides.get("negative_prompt")
+                        if isinstance(negative_override, str) and negative_override.strip():
+                            scene_kwargs["negative_prompt"] = negative_override
+                        force_ref_override = scene_overrides.get("force_use_eeg_ref")
+                        if isinstance(force_ref_override, bool):
+                            scene_kwargs["force_use_eeg_ref"] = bool(force_ref_override)
+
+                        path = generate_scene_image(scene, project_dir, **scene_kwargs)
                         with lock:
                             scene["image_path"] = str(path)
                             save_plan(project_dir, plan)
@@ -1454,6 +1648,18 @@ def render_batch_queue():
                 continue
 
             scenes = plan.get("scenes", [])
+            image_model = _plan_image_model(plan, fallback=st.session_state.image_model)
+            meta = plan.setdefault("meta", {})
+            if "use_eeg_10_20_guide" in meta:
+                use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide"))
+            else:
+                use_eeg_10_20_guide = bool(st.session_state.use_eeg_10_20_guide)
+            if (
+                meta.get("image_model") != image_model
+                or bool(meta.get("use_eeg_10_20_guide")) != use_eeg_10_20_guide
+            ):
+                meta["image_model"] = image_model
+                meta["use_eeg_10_20_guide"] = use_eeg_10_20_guide
             project_result = {
                 "name": project_name,
                 "images": 0,
@@ -1467,7 +1673,26 @@ def render_batch_queue():
                 for scene in scenes:
                     if not scene.get("image_path") or not Path(scene["image_path"]).exists():
                         try:
-                            path = generate_scene_image(scene, project_dir)
+                            scene_kwargs = {
+                                "model": image_model,
+                                "use_eeg_10_20_guide": use_eeg_10_20_guide,
+                            }
+                            scene_overrides = _scene_generation_overrides(scene)
+                            guidance_override = scene_overrides.get("guidance")
+                            if isinstance(guidance_override, (int, float)):
+                                scene_kwargs["guidance"] = float(guidance_override)
+                            negative_override = scene_overrides.get("negative_prompt")
+                            if isinstance(negative_override, str) and negative_override.strip():
+                                scene_kwargs["negative_prompt"] = negative_override
+                            force_ref_override = scene_overrides.get("force_use_eeg_ref")
+                            if isinstance(force_ref_override, bool):
+                                scene_kwargs["force_use_eeg_ref"] = bool(force_ref_override)
+
+                            path = generate_scene_image(
+                                scene,
+                                project_dir,
+                                **scene_kwargs,
+                            )
                             scene["image_path"] = str(path)
                             project_result["images"] += 1
                         except Exception as e:

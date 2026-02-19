@@ -316,6 +316,13 @@ Examples of required text in every image type:
 - Conceptual metaphors: Must have a title or caption
 - Transitions: Must have section labels
 
+EEG TOPOLOGY REFERENCE MARKER (CRITICAL FOR BRAIN-MAP SHOTS):
+- When a scene specifically depicts EEG electrode topology/placement/coherence map geometry (10-20 layout style),
+  include this exact token somewhere in the `visual_prompt`:
+  `[[USE_EEG_10_20_REF]]`
+- Use the marker ONLY for those topology/brain-map placement scenes.
+- Do NOT use this marker for generic brains, metaphors, title cards, or non-topology infographics.
+
 TEXT FORMATTING IN VISUAL PROMPTS:
 You can specify:
 - Font style: "bold sans-serif", "elegant serif", "modern minimal", "clean Helvetica-style"

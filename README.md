@@ -78,6 +78,9 @@ ELEVENLABS_API_KEY=...         # Optional: required only if you select ElevenLab
 
 # Optional overrides for which model is used when editing existing images (UI "Edit Image" + QC auto-fix)
 IMAGE_EDIT_MODEL=qwen-image-edit-max   # or: qwen/qwen-image-edit-2511
+
+# Optional: append EEG 10-20 anatomical guidance to image prompts
+USE_EEG_10_20_GUIDE=true
 ```
 
 You need at least one of OpenAI or Anthropic for the director agent.
@@ -180,7 +183,7 @@ before publishing an MP4 to the clinician portal sync folder.
 
 **What it does**
 - Loads ground truth from qEEG Council (Stage 4 consolidation + Stage 1 `_data_pack.json`)
-- Uses a judge model (Claude Opus 4.5) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
+- Uses a judge model (Claude Opus 4.6) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
 - Uses Gemini vision to find misspelled words / wrong patient numbers *in the rendered slide images*
 - By default, visual QC runs in **check-only mode** (no automated image edits). When issues are found it writes:
   - `projects/<PROJECT>/qc_visual_issues.json`
