@@ -32,9 +32,17 @@ from core.voice_gen import (
     DEFAULT_ELEVENLABS_TEXT_NORMALIZATION,
     DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
     DEFAULT_ELEVENLABS_VOICE,
+    DEFAULT_QWEN3_TTS_LANGUAGE,
+    DEFAULT_QWEN3_TTS_MODE,
+    DEFAULT_QWEN3_TTS_SPEAKER,
     DEFAULT_SPEED,
     DEFAULT_VOICE,
     ElevenLabsTextNormalization,
+    QWEN3_TTS_LANGUAGES,
+    QWEN3_TTS_MODES,
+    QWEN3_TTS_SPEAKERS,
+    Qwen3TTSLanguage,
+    Qwen3TTSMode,
     generate_scene_audio,
 )
 from core.video_assembly import assemble_video
@@ -115,9 +123,17 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
 
     # TTS settings: prefer CLI args (if provided), else prefer plan meta, else defaults.
     tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "kokoro").strip()
-    if tts_provider not in {"kokoro", "elevenlabs", "openai"}:
+    if tts_provider not in {"kokoro", "elevenlabs", "qwen3", "openai"}:
         print(f"  WARNING: Unknown tts_provider={tts_provider!r}; falling back to 'kokoro'")
         tts_provider = "kokoro"
+
+    qwen3_mode: Qwen3TTSMode = DEFAULT_QWEN3_TTS_MODE
+    qwen3_language: Qwen3TTSLanguage = DEFAULT_QWEN3_TTS_LANGUAGE
+    qwen3_speaker = DEFAULT_QWEN3_TTS_SPEAKER
+    qwen3_voice_description = ""
+    qwen3_reference_audio = ""
+    qwen3_reference_text = ""
+    qwen3_style_instruction = ""
 
     if tts_provider == "elevenlabs":
         tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_ELEVENLABS_VOICE).strip()
@@ -142,6 +158,32 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             if ARGS.get("elevenlabs_use_speaker_boost") is not None
             else meta.get("elevenlabs_use_speaker_boost", DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST)
         )
+    elif tts_provider == "qwen3":
+        tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_QWEN3_TTS_SPEAKER).strip()
+        tts_speed = 1.0
+        elevenlabs_model_id = DEFAULT_ELEVENLABS_MODEL
+        elevenlabs_text_norm = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
+        elevenlabs_stability = DEFAULT_ELEVENLABS_STABILITY
+        elevenlabs_similarity = DEFAULT_ELEVENLABS_SIMILARITY_BOOST
+        elevenlabs_style = DEFAULT_ELEVENLABS_STYLE
+        elevenlabs_use_speaker_boost = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST
+
+        raw_mode = str(ARGS.get("qwen3_mode") or meta.get("qwen3_mode") or DEFAULT_QWEN3_TTS_MODE).strip()
+        if raw_mode in QWEN3_TTS_MODES:
+            qwen3_mode = raw_mode  # type: ignore[assignment]
+        raw_language = str(ARGS.get("qwen3_language") or meta.get("qwen3_language") or DEFAULT_QWEN3_TTS_LANGUAGE).strip()
+        if raw_language in QWEN3_TTS_LANGUAGES:
+            qwen3_language = raw_language  # type: ignore[assignment]
+
+        qwen3_speaker = str(ARGS.get("qwen3_speaker") or meta.get("qwen3_speaker") or tts_voice).strip()
+        if qwen3_speaker not in QWEN3_TTS_SPEAKERS:
+            qwen3_speaker = DEFAULT_QWEN3_TTS_SPEAKER
+        tts_voice = qwen3_speaker
+
+        qwen3_voice_description = str(ARGS.get("qwen3_voice_description") or meta.get("qwen3_voice_description") or "").strip()
+        qwen3_reference_audio = str(ARGS.get("qwen3_reference_audio") or meta.get("qwen3_reference_audio") or "").strip()
+        qwen3_reference_text = str(ARGS.get("qwen3_reference_text") or meta.get("qwen3_reference_text") or "").strip()
+        qwen3_style_instruction = str(ARGS.get("qwen3_style_instruction") or meta.get("qwen3_style_instruction") or "").strip()
     else:
         # Kokoro/OpenAI defaults (voice/speed are only meaningful for Kokoro here)
         tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_VOICE).strip()
@@ -159,6 +201,12 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
         print(f"  [DRY RUN] EEG 10-20 guide: {use_eeg_10_20_guide}")
         print(f"  [DRY RUN] Input text length: {len(input_text)} chars")
         print(f"  [DRY RUN] TTS: provider={tts_provider} voice={tts_voice} speed={tts_speed}")
+        if tts_provider == "qwen3":
+            print(
+                "  [DRY RUN] Qwen3: "
+                f"mode={qwen3_mode} language={qwen3_language} speaker={qwen3_speaker} "
+                f"has_reference_audio={bool(qwen3_reference_audio)}"
+            )
         return True
 
     # Step 1: Generate new storyboard
@@ -193,6 +241,13 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             "elevenlabs_similarity_boost": elevenlabs_similarity,
             "elevenlabs_style": elevenlabs_style,
             "elevenlabs_use_speaker_boost": elevenlabs_use_speaker_boost,
+            "qwen3_mode": qwen3_mode,
+            "qwen3_language": qwen3_language,
+            "qwen3_speaker": qwen3_speaker,
+            "qwen3_voice_description": qwen3_voice_description,
+            "qwen3_reference_audio": qwen3_reference_audio,
+            "qwen3_reference_text": qwen3_reference_text,
+            "qwen3_style_instruction": qwen3_style_instruction,
         },
         "scenes": scenes,
     }
@@ -234,6 +289,13 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
                 elevenlabs_similarity_boost=elevenlabs_similarity,
                 elevenlabs_style=elevenlabs_style,
                 elevenlabs_use_speaker_boost=elevenlabs_use_speaker_boost,
+                qwen3_mode=qwen3_mode,
+                qwen3_language=qwen3_language,
+                qwen3_speaker=qwen3_speaker,
+                qwen3_voice_description=qwen3_voice_description,
+                qwen3_reference_audio=qwen3_reference_audio,
+                qwen3_reference_text=qwen3_reference_text,
+                qwen3_style_instruction=qwen3_style_instruction,
             )
             scene["audio_path"] = str(path)
             save_plan(project_dir, new_plan)
@@ -279,7 +341,12 @@ def main():
         dest="use_eeg_10_20_guide",
         help="Disable the 10-20 electrode-placement reminder.",
     )
-    parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: kokoro, elevenlabs, openai (default: from plan meta or kokoro)")
+    parser.add_argument(
+        "--tts-provider",
+        type=str,
+        default="",
+        help="TTS provider: kokoro, elevenlabs, qwen3, openai (default: from plan meta or kokoro)",
+    )
     parser.add_argument("--tts-voice", type=str, default="", help="TTS voice (Kokoro voice id or ElevenLabs voice name)")
     parser.add_argument("--tts-speed", type=float, default=0.0, help="TTS speed (Kokoro or ElevenLabs). 0 means default/from meta.")
     parser.add_argument("--elevenlabs-model-id", type=str, default="", help="ElevenLabs model_id (default eleven_flash_v2_5)")
@@ -297,6 +364,28 @@ def main():
         action="store_true",
         help="Enable ElevenLabs speaker boost (if omitted, use plan meta or default).",
     )
+    parser.add_argument(
+        "--qwen3-mode",
+        type=str,
+        default="",
+        help=f"Qwen3 mode: {', '.join(QWEN3_TTS_MODES)} (default {DEFAULT_QWEN3_TTS_MODE})",
+    )
+    parser.add_argument(
+        "--qwen3-language",
+        type=str,
+        default="",
+        help=f"Qwen3 language: {', '.join(QWEN3_TTS_LANGUAGES)} (default {DEFAULT_QWEN3_TTS_LANGUAGE})",
+    )
+    parser.add_argument(
+        "--qwen3-speaker",
+        type=str,
+        default="",
+        help=f"Qwen3 preset speaker for custom_voice mode: {', '.join(QWEN3_TTS_SPEAKERS)}",
+    )
+    parser.add_argument("--qwen3-voice-description", type=str, default="", help="Qwen3 voice_description (voice_design mode)")
+    parser.add_argument("--qwen3-reference-audio", type=str, default="", help="Qwen3 reference audio URL/path (voice_clone mode)")
+    parser.add_argument("--qwen3-reference-text", type=str, default="", help="Qwen3 transcript for reference audio (voice_clone mode)")
+    parser.add_argument("--qwen3-style-instruction", type=str, default="", help="Qwen3 optional style/emotion instruction")
     args = parser.parse_args()
 
     # Normalize CLI args into a simple dict for use inside regenerate_project()
@@ -314,6 +403,13 @@ def main():
         "elevenlabs_style": float(args.elevenlabs_style) if args.elevenlabs_style else 0.0,
         # Note: presence of the flag is meaningful; absence means "use meta/default"
         "elevenlabs_use_speaker_boost": True if args.elevenlabs_use_speaker_boost else None,
+        "qwen3_mode": (args.qwen3_mode or "").strip(),
+        "qwen3_language": (args.qwen3_language or "").strip(),
+        "qwen3_speaker": (args.qwen3_speaker or "").strip(),
+        "qwen3_voice_description": (args.qwen3_voice_description or "").strip(),
+        "qwen3_reference_audio": (args.qwen3_reference_audio or "").strip(),
+        "qwen3_reference_text": (args.qwen3_reference_text or "").strip(),
+        "qwen3_style_instruction": (args.qwen3_style_instruction or "").strip(),
     }
 
     if args.projects:

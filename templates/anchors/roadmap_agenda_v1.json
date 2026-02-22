@@ -1,0 +1,63 @@
+{
+  "template_id": "roadmap_agenda_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "title",
+      "box": [
+        120,
+        62,
+        1424,
+        84
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.title",
+          "scene.title"
+        ],
+        "fallback": "What We'll Explore"
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 30,
+        "color": "#F7FCFF"
+      }
+    },
+    {
+      "id": "items",
+      "box": [
+        280,
+        300,
+        1180,
+        470
+      ],
+      "align": "left",
+      "valign": "top",
+      "binding": {
+        "mode": "join_path",
+        "path": "structured_data.items",
+        "field": "label",
+        "separator": "\n",
+        "prefix": "\u2022 ",
+        "max_items": 8,
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 42,
+        "min_font_size": 22,
+        "color": "#D6EBFA",
+        "line_height": 1.22
+      }
+    }
+  ]
+}

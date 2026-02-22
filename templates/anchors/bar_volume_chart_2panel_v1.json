@@ -1,0 +1,203 @@
+{
+  "template_id": "bar_volume_chart_2panel_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "metric_title",
+      "box": [
+        120,
+        62,
+        1424,
+        86
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.metric",
+          "structured_data.title",
+          "scene.title"
+        ],
+        "fallback": "Signal Strength"
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 30,
+        "color": "#F4FBFF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 4,
+          "color": "#00000099"
+        }
+      }
+    },
+    {
+      "id": "subtitle",
+      "box": [
+        120,
+        798,
+        1424,
+        72
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "Target: {structured_data.target_band.min}\u2013{structured_data.target_band.max} {structured_data.target_band.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 30,
+        "min_font_size": 20,
+        "color": "#BDD9EF"
+      }
+    },
+    {
+      "id": "bar_1_label",
+      "box": [
+        180,
+        242,
+        300,
+        52
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "path",
+        "path": "structured_data.bars.0.label",
+        "fallback": "Session 1"
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 28,
+        "min_font_size": 16,
+        "color": "#CFE7F9"
+      }
+    },
+    {
+      "id": "bar_1_value",
+      "box": [
+        170,
+        700,
+        320,
+        78
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.bars.0.value} {structured_data.bars.0.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 46,
+        "min_font_size": 20,
+        "color": "#E6F5FF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 3,
+          "color": "#00000099"
+        },
+        "glow": {
+          "radius": 5,
+          "color": "#82C5FF66"
+        }
+      }
+    },
+    {
+      "id": "bar_2_label",
+      "box": [
+        1184,
+        242,
+        300,
+        52
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "path",
+        "path": "structured_data.bars.1.label",
+        "fallback": "Session 2"
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 28,
+        "min_font_size": 16,
+        "color": "#CFE7F9"
+      }
+    },
+    {
+      "id": "bar_2_value",
+      "box": [
+        1174,
+        700,
+        320,
+        78
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.bars.1.value} {structured_data.bars.1.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 46,
+        "min_font_size": 20,
+        "color": "#E6F5FF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 3,
+          "color": "#00000099"
+        },
+        "glow": {
+          "radius": 5,
+          "color": "#82C5FF66"
+        }
+      }
+    }
+  ],
+  "bars": [
+    {
+      "id": "bar_1_fill",
+      "box": [
+        236,
+        320,
+        188,
+        420
+      ],
+      "source": "structured_data.bars.0.value",
+      "color": "#8CCBFF",
+      "base_alpha": 0.2
+    },
+    {
+      "id": "bar_2_fill",
+      "box": [
+        1240,
+        320,
+        188,
+        420
+      ],
+      "source": "structured_data.bars.1.value",
+      "color": "#F4C97B",
+      "base_alpha": 0.2
+    }
+  ]
+}

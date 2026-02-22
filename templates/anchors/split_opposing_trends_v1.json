@@ -1,0 +1,161 @@
+{
+  "template_id": "split_opposing_trends_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "scene_title",
+      "box": [
+        120,
+        62,
+        1424,
+        84
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "scene.title",
+          "structured_data.headline"
+        ]
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 30,
+        "color": "#F8FCFF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 4,
+          "color": "#00000099"
+        }
+      }
+    },
+    {
+      "id": "left_metric",
+      "box": [
+        120,
+        238,
+        636,
+        72
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "path",
+        "path": "structured_data.left.metric",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 38,
+        "min_font_size": 20,
+        "color": "#D9EEFF"
+      }
+    },
+    {
+      "id": "left_values",
+      "box": [
+        120,
+        336,
+        636,
+        188
+      ],
+      "align": "center",
+      "valign": "top",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.left.from} \u2192 {structured_data.left.to} {structured_data.left.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 24,
+        "color": "#B9DCFF",
+        "line_height": 1.15
+      }
+    },
+    {
+      "id": "right_metric",
+      "box": [
+        908,
+        238,
+        636,
+        72
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "path",
+        "path": "structured_data.right.metric",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 38,
+        "min_font_size": 20,
+        "color": "#FFE8CB"
+      }
+    },
+    {
+      "id": "right_values",
+      "box": [
+        908,
+        336,
+        636,
+        188
+      ],
+      "align": "center",
+      "valign": "top",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.right.from} \u2192 {structured_data.right.to} {structured_data.right.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 24,
+        "color": "#FFD9AE",
+        "line_height": 1.15
+      }
+    },
+    {
+      "id": "takeaway",
+      "box": [
+        120,
+        630,
+        1424,
+        180
+      ],
+      "align": "center",
+      "valign": "top",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.takeaway",
+          "structured_data.headline",
+          "scene.narration"
+        ]
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 32,
+        "min_font_size": 20,
+        "color": "#DFEBF5",
+        "line_height": 1.2
+      }
+    }
+  ]
+}

@@ -1,8 +1,11 @@
-"""Text-to-speech generation using Kokoro, ElevenLabs, Chatterbox, or OpenAI."""
+"""Text-to-speech generation using Kokoro, ElevenLabs, Qwen3-TTS, Chatterbox, or OpenAI."""
 
+from contextlib import ExitStack
 import os
 from pathlib import Path
+import subprocess
 from typing import Literal
+from urllib.parse import urlparse
 
 import requests
 import soundfile as sf
@@ -36,6 +39,51 @@ DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST = True
 
 ElevenLabsTextNormalization = Literal["auto", "on", "off"]
 DEFAULT_ELEVENLABS_TEXT_NORMALIZATION: ElevenLabsTextNormalization = "auto"
+
+# Replicate Qwen3-TTS settings
+QWEN3_TTS_MODEL = "qwen/qwen3-tts"
+
+Qwen3TTSMode = Literal["custom_voice", "voice_clone", "voice_design"]
+Qwen3TTSLanguage = Literal[
+    "auto",
+    "Chinese",
+    "English",
+    "Japanese",
+    "Korean",
+    "French",
+    "German",
+    "Spanish",
+    "Portuguese",
+    "Russian",
+]
+
+QWEN3_TTS_MODES: tuple[Qwen3TTSMode, ...] = ("custom_voice", "voice_clone", "voice_design")
+QWEN3_TTS_LANGUAGES: tuple[Qwen3TTSLanguage, ...] = (
+    "auto",
+    "Chinese",
+    "English",
+    "Japanese",
+    "Korean",
+    "French",
+    "German",
+    "Spanish",
+    "Portuguese",
+    "Russian",
+)
+QWEN3_TTS_SPEAKERS: tuple[str, ...] = (
+    "Aiden",
+    "Dylan",
+    "Eric",
+    "Ono_anna",
+    "Ryan",
+    "Serena",
+    "Sohee",
+    "Uncle_fu",
+    "Vivian",
+)
+DEFAULT_QWEN3_TTS_MODE: Qwen3TTSMode = "custom_voice"
+DEFAULT_QWEN3_TTS_LANGUAGE: Qwen3TTSLanguage = "auto"
+DEFAULT_QWEN3_TTS_SPEAKER = "Serena"
 
 # Available Kokoro voices
 # American English (lang_code='a'):
@@ -75,7 +123,7 @@ DEFAULT_SPEED = 1.1  # Slightly faster than normal
 DEFAULT_EXAGGERATION = 0.6  # Slightly more expressive than neutral (0.5)
 
 # TTS Provider type
-TTSProvider = Literal["kokoro", "elevenlabs", "chatterbox", "openai"]
+TTSProvider = Literal["kokoro", "elevenlabs", "qwen3", "chatterbox", "openai"]
 
 
 def generate_audio(
@@ -92,6 +140,14 @@ def generate_audio(
     elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE,
     elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    # Qwen3-TTS settings (used when tts_provider=="qwen3")
+    qwen3_mode: Qwen3TTSMode = DEFAULT_QWEN3_TTS_MODE,
+    qwen3_language: Qwen3TTSLanguage = DEFAULT_QWEN3_TTS_LANGUAGE,
+    qwen3_speaker: str = DEFAULT_QWEN3_TTS_SPEAKER,
+    qwen3_voice_description: str = "",
+    qwen3_reference_audio: str = "",
+    qwen3_reference_text: str = "",
+    qwen3_style_instruction: str = "",
 ) -> Path:
     """
     Generate speech audio from text.
@@ -101,7 +157,7 @@ def generate_audio(
         output_path: Where to save the audio file
         voice: Voice identifier (provider-dependent: Kokoro voice id like "af_bella", or ElevenLabs voice name like "Rachel")
         speed: Speech speed multiplier (provider-dependent: Kokoro pipeline speed, or ElevenLabs voice_settings.speed)
-        tts_provider: TTS provider ("kokoro", "elevenlabs", "chatterbox", or "openai")
+        tts_provider: TTS provider ("kokoro", "elevenlabs", "qwen3", "chatterbox", or "openai")
         exaggeration: Emotion intensity 0.25-2.0 (0.5=neutral, higher=more expressive) - Chatterbox only
         elevenlabs_model_id: ElevenLabs model id (e.g., "eleven_flash_v2_5")
         elevenlabs_apply_text_normalization: ElevenLabs text normalization mode ("auto"|"on"|"off")
@@ -109,6 +165,13 @@ def generate_audio(
         elevenlabs_similarity_boost: ElevenLabs voice_settings.similarity_boost (0-1)
         elevenlabs_style: ElevenLabs voice_settings.style (0-1)
         elevenlabs_use_speaker_boost: ElevenLabs voice_settings.use_speaker_boost (bool)
+        qwen3_mode: Qwen3-TTS mode ("custom_voice"|"voice_clone"|"voice_design")
+        qwen3_language: Qwen3-TTS language ("auto" or explicit language name)
+        qwen3_speaker: Preset speaker for custom voice mode
+        qwen3_voice_description: Natural-language voice description for voice_design mode
+        qwen3_reference_audio: URL/path to reference audio for voice_clone mode
+        qwen3_reference_text: Transcript of the reference audio (recommended for voice_clone)
+        qwen3_style_instruction: Optional style/emotion instruction
 
     Returns:
         Path to the saved audio file
@@ -135,6 +198,18 @@ def generate_audio(
             speed=speed,
             use_speaker_boost=elevenlabs_use_speaker_boost,
             apply_text_normalization=elevenlabs_apply_text_normalization,
+        )
+    elif tts_provider == "qwen3":
+        return _generate_with_qwen3_tts(
+            text=text,
+            output_path=output_path,
+            mode=qwen3_mode,
+            language=qwen3_language,
+            speaker=qwen3_speaker,
+            voice_description=qwen3_voice_description,
+            reference_audio=qwen3_reference_audio,
+            reference_text=qwen3_reference_text,
+            style_instruction=qwen3_style_instruction,
         )
     elif tts_provider == "chatterbox":
         return _generate_with_chatterbox(text, output_path, exaggeration)
@@ -214,10 +289,11 @@ def _generate_with_chatterbox(
         )
 
     # Use image_limiter since it's also Replicate
-    output_url = image_limiter.call_with_retry(_call_chatterbox)
+    output = image_limiter.call_with_retry(_call_chatterbox)
+    output_url = _replicate_output_to_url(output)
 
     # Download the audio file
-    response = requests.get(output_url)
+    response = requests.get(output_url, timeout=(5, 120))
     response.raise_for_status()
 
     # Chatterbox returns WAV, save directly
@@ -233,6 +309,152 @@ def _generate_with_chatterbox(
 
     # Otherwise convert (though WAV is preferred)
     return temp_path
+
+
+def _replicate_output_to_url(output: object) -> str:
+    """Normalize Replicate output objects into a downloadable URL."""
+    if isinstance(output, list):
+        if not output:
+            raise RuntimeError("Replicate returned an empty output list.")
+        value = output[0]
+    else:
+        value = output
+
+    maybe_url = getattr(value, "url", None)
+    if isinstance(maybe_url, str) and maybe_url.strip():
+        return maybe_url.strip()
+
+    output_url = str(value or "").strip()
+    if not output_url:
+        raise RuntimeError("Replicate returned empty output.")
+    return output_url
+
+
+def _is_probably_wav(content: bytes, content_type: str, url: str) -> bool:
+    """Best-effort detection of WAV output."""
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WAVE":
+        return True
+    ctype = content_type.lower()
+    if "audio/wav" in ctype or "audio/x-wav" in ctype:
+        return True
+    suffix = Path(urlparse(url).path).suffix.lower()
+    return suffix == ".wav"
+
+
+def _audio_suffix_from_response(content_type: str, url: str, is_wav: bool) -> str:
+    """Infer audio file suffix from response metadata."""
+    if is_wav:
+        return ".wav"
+
+    ctype = content_type.lower()
+    if "audio/mpeg" in ctype or "audio/mp3" in ctype:
+        return ".mp3"
+    if "audio/mp4" in ctype or "audio/m4a" in ctype:
+        return ".m4a"
+    if "audio/ogg" in ctype:
+        return ".ogg"
+    if "audio/flac" in ctype:
+        return ".flac"
+
+    suffix = Path(urlparse(url).path).suffix.lower()
+    if suffix in {".mp3", ".m4a", ".ogg", ".flac", ".aac"}:
+        return suffix
+    return ".mp3"
+
+
+def _generate_with_qwen3_tts(
+    *,
+    text: str,
+    output_path: Path,
+    mode: Qwen3TTSMode = DEFAULT_QWEN3_TTS_MODE,
+    language: Qwen3TTSLanguage = DEFAULT_QWEN3_TTS_LANGUAGE,
+    speaker: str = DEFAULT_QWEN3_TTS_SPEAKER,
+    voice_description: str = "",
+    reference_audio: str = "",
+    reference_text: str = "",
+    style_instruction: str = "",
+) -> Path:
+    """
+    Generate audio with qwen/qwen3-tts on Replicate.
+
+    Modes:
+    - custom_voice: uses preset speaker voices
+    - voice_clone: clones from reference audio (+ optional reference transcript)
+    - voice_design: creates voice from natural-language description
+    """
+    import replicate
+
+    resolved_mode: Qwen3TTSMode = mode if mode in QWEN3_TTS_MODES else DEFAULT_QWEN3_TTS_MODE
+    resolved_language: Qwen3TTSLanguage = (
+        language if language in QWEN3_TTS_LANGUAGES else DEFAULT_QWEN3_TTS_LANGUAGE
+    )
+    resolved_speaker = str(speaker or DEFAULT_QWEN3_TTS_SPEAKER).strip()
+    if resolved_speaker not in QWEN3_TTS_SPEAKERS:
+        resolved_speaker = DEFAULT_QWEN3_TTS_SPEAKER
+
+    base_inputs: dict[str, object] = {
+        "text": text,
+        "mode": resolved_mode,
+        "language": resolved_language,
+    }
+    style_value = str(style_instruction or "").strip()
+    if style_value:
+        base_inputs["style_instruction"] = style_value
+
+    voice_description_value = str(voice_description or "").strip()
+    reference_audio_value = str(reference_audio or "").strip()
+    reference_text_value = str(reference_text or "").strip()
+    if resolved_mode == "custom_voice":
+        base_inputs["speaker"] = resolved_speaker
+    elif resolved_mode == "voice_design":
+        if not voice_description_value:
+            raise ValueError("qwen3 voice_design mode requires a non-empty voice_description.")
+        base_inputs["voice_description"] = voice_description_value
+    else:
+        if not reference_audio_value:
+            raise ValueError("qwen3 voice_clone mode requires reference_audio (URL or local path).")
+        if reference_text_value:
+            base_inputs["reference_text"] = reference_text_value
+
+    def _call_qwen3():
+        with ExitStack() as stack:
+            inputs = dict(base_inputs)
+            if resolved_mode == "voice_clone":
+                if reference_audio_value.startswith(("http://", "https://")):
+                    inputs["reference_audio"] = reference_audio_value
+                else:
+                    local_path = Path(reference_audio_value).expanduser()
+                    if not local_path.exists():
+                        raise ValueError(
+                            f"qwen3 reference_audio not found at path: {local_path}. "
+                            "Use an http(s) URL or an existing local file path."
+                        )
+                    inputs["reference_audio"] = stack.enter_context(open(local_path, "rb"))
+            return replicate.run(QWEN3_TTS_MODEL, input=inputs)
+
+    output = image_limiter.call_with_retry(_call_qwen3)
+    output_url = _replicate_output_to_url(output)
+
+    response = requests.get(output_url, timeout=(5, 180))
+    response.raise_for_status()
+    audio_bytes = response.content
+    content_type = response.headers.get("Content-Type", "")
+    is_wav = _is_probably_wav(audio_bytes, content_type, output_url)
+    source_suffix = _audio_suffix_from_response(content_type, output_url, is_wav)
+
+    if output_path.suffix == ".wav":
+        if is_wav:
+            output_path.write_bytes(audio_bytes)
+            return output_path
+        temp_path = output_path.with_suffix(source_suffix)
+        temp_path.write_bytes(audio_bytes)
+        _convert_audio_to_wav(temp_path, output_path)
+        temp_path.unlink(missing_ok=True)
+        return output_path
+
+    out_path = output_path.with_suffix(source_suffix)
+    out_path.write_bytes(audio_bytes)
+    return out_path
 
 
 def _generate_with_elevenlabs(
@@ -344,13 +566,16 @@ def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
         audio = AudioSegment.from_mp3(str(mp3_path))
         audio.export(str(wav_path), format="wav")
     except ImportError:
-        # Fallback to ffmpeg
-        import subprocess
-        subprocess.run(
-            ["ffmpeg", "-i", str(mp3_path), "-y", str(wav_path)],
-            capture_output=True,
-            check=True,
-        )
+        _convert_audio_to_wav(mp3_path, wav_path)
+
+
+def _convert_audio_to_wav(input_path: Path, wav_path: Path) -> None:
+    """Convert any ffmpeg-supported audio format to WAV."""
+    subprocess.run(
+        ["ffmpeg", "-i", str(input_path), "-y", str(wav_path)],
+        capture_output=True,
+        check=True,
+    )
 
 
 def generate_scene_audio(
@@ -367,6 +592,14 @@ def generate_scene_audio(
     elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE,
     elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    # Qwen3-TTS passthrough
+    qwen3_mode: Qwen3TTSMode = DEFAULT_QWEN3_TTS_MODE,
+    qwen3_language: Qwen3TTSLanguage = DEFAULT_QWEN3_TTS_LANGUAGE,
+    qwen3_speaker: str = DEFAULT_QWEN3_TTS_SPEAKER,
+    qwen3_voice_description: str = "",
+    qwen3_reference_audio: str = "",
+    qwen3_reference_text: str = "",
+    qwen3_style_instruction: str = "",
 ) -> Path:
     """
     Generate audio for a specific scene.
@@ -374,11 +607,12 @@ def generate_scene_audio(
     Args:
         scene: Scene dictionary with 'id' and 'narration'
         project_dir: Project directory for saving assets
-        tts_provider: TTS provider ("kokoro", "elevenlabs", "chatterbox", or "openai")
+        tts_provider: TTS provider ("kokoro", "elevenlabs", "qwen3", "chatterbox", or "openai")
         voice: Voice identifier (provider-dependent)
         speed: Speed multiplier (provider-dependent)
         exaggeration: Emotion intensity 0.25-2.0 (Chatterbox only)
         elevenlabs_*: ElevenLabs settings (used when tts_provider=="elevenlabs")
+        qwen3_*: Qwen3-TTS settings (used when tts_provider=="qwen3")
 
     Returns:
         Path to the generated audio
@@ -401,4 +635,11 @@ def generate_scene_audio(
         elevenlabs_similarity_boost=elevenlabs_similarity_boost,
         elevenlabs_style=elevenlabs_style,
         elevenlabs_use_speaker_boost=elevenlabs_use_speaker_boost,
+        qwen3_mode=qwen3_mode,
+        qwen3_language=qwen3_language,
+        qwen3_speaker=qwen3_speaker,
+        qwen3_voice_description=qwen3_voice_description,
+        qwen3_reference_audio=qwen3_reference_audio,
+        qwen3_reference_text=qwen3_reference_text,
+        qwen3_style_instruction=qwen3_style_instruction,
     )

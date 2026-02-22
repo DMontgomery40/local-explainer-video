@@ -1,0 +1,216 @@
+{
+  "manifest_version": "1.1.0",
+  "templates": [
+    {
+      "template_id": "bar_volume_chart_3panel_v1",
+      "scene_types": [
+        "bar_volume_chart"
+      ],
+      "template_path": "templates/backgrounds/bar_volume_chart_3panel_v1.png",
+      "anchors_path": "templates/anchors/bar_volume_chart_3panel_v1.json",
+      "priority": 10,
+      "selector": {
+        "bar_count_eq": 3
+      },
+      "selector_metadata": {
+        "strategy": "count_match",
+        "notes": "Use when payload contains exactly 3 bars"
+      },
+      "tags": [
+        "bars",
+        "3panel"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "bar_volume_chart_2panel_v1",
+      "scene_types": [
+        "bar_volume_chart"
+      ],
+      "template_path": "templates/backgrounds/bar_volume_chart_2panel_v1.png",
+      "anchors_path": "templates/anchors/bar_volume_chart_2panel_v1.json",
+      "priority": 11,
+      "selector": {
+        "bar_count_eq": 2
+      },
+      "selector_metadata": {
+        "strategy": "count_match",
+        "notes": "Use when payload contains exactly 2 bars"
+      },
+      "tags": [
+        "bars",
+        "2panel"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "split_opposing_trends_v1",
+      "scene_types": [
+        "split_opposing_trends"
+      ],
+      "template_path": "templates/backgrounds/split_opposing_trends_v1.png",
+      "anchors_path": "templates/anchors/split_opposing_trends_v1.json",
+      "priority": 20,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "single_template",
+        "notes": "Single split panel variant for opposing trends"
+      },
+      "tags": [
+        "split"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "roadmap_agenda_v1",
+      "scene_types": [
+        "roadmap_agenda"
+      ],
+      "template_path": "templates/backgrounds/roadmap_agenda_v1.png",
+      "anchors_path": "templates/anchors/roadmap_agenda_v1.json",
+      "priority": 20,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "single_template",
+        "notes": "Roadmap background with dynamic text rows"
+      },
+      "tags": [
+        "roadmap"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "waveform_voltage_panel_v1",
+      "scene_types": [
+        "waveform_voltage_panel"
+      ],
+      "template_path": "templates/backgrounds/waveform_voltage_panel_v1.png",
+      "anchors_path": "templates/anchors/waveform_voltage_panel_v1.json",
+      "priority": 20,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "single_template",
+        "notes": "Baseline waveform panel scaffold"
+      },
+      "tags": [
+        "waveform"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "radial_kpi_ring_v1",
+      "scene_types": [
+        "radial_kpi_ring"
+      ],
+      "template_path": "templates/backgrounds/radial_kpi_ring_v1.png",
+      "anchors_path": "templates/anchors/radial_kpi_ring_v1.json",
+      "priority": 20,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "single_template",
+        "notes": "Baseline radial ring scaffold"
+      },
+      "tags": [
+        "radial"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "title_card_v1",
+      "scene_types": [
+        "atmospheric_title_card",
+        "atmospheric_metaphor_scene",
+        "atmospheric_mechanism_scene"
+      ],
+      "template_path": "templates/backgrounds/title_card_v1.png",
+      "anchors_path": "templates/anchors/title_card_v1.json",
+      "priority": 20,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "single_template",
+        "notes": "Atmospheric placeholder pending curated replacement"
+      },
+      "tags": [
+        "title",
+        "atmospheric"
+      ],
+      "origin": "qwen_curated",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "generated_pending_approval",
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "template_id": "generic_data_panel_v1",
+      "scene_types": [
+        "multi_session_trend",
+        "verdict_summary",
+        "session_timeline",
+        "gauge_ratio_meter",
+        "coherence_network_map",
+        "hemispheric_compare",
+        "state_flexibility_rest_task",
+        "baseline_target_split",
+        "measurement_primer",
+        "future_projection",
+        "line_trajectory",
+        "coherence_progression_sequence",
+        "dotplot_variability",
+        "pathway_hub_synthesis",
+        "regional_frequency_map",
+        "table_dashboard",
+        "quality_alert",
+        "bar_volume_chart"
+      ],
+      "template_path": "templates/backgrounds/generic_data_panel_v1.png",
+      "anchors_path": "templates/anchors/generic_data_panel_v1.json",
+      "priority": 999,
+      "selector": {},
+      "selector_metadata": {
+        "strategy": "broad_fallback",
+        "notes": "Development-only fallback. Must never be used in production mode."
+      },
+      "tags": [
+        "fallback",
+        "generic"
+      ],
+      "origin": "scaffold_only",
+      "operational_status": "dev_only",
+      "production_ready": false,
+      "curation_status": "pending",
+      "approved_by": null,
+      "approved_at": null
+    }
+  ]
+}

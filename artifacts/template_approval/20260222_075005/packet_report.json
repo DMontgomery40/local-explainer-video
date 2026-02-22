@@ -1,0 +1,219 @@
+{
+  "created_utc": "2026-02-22T07:50:05Z",
+  "packet_dir": "/Users/davidmontgomery/local-explainer-video/artifacts/template_approval/20260222_075005",
+  "manifest_summary": {
+    "total_templates": 8,
+    "origin_counts": {
+      "qwen_curated": 7,
+      "scaffold_only": 1
+    },
+    "operational_status_counts": {
+      "dev_only": 8
+    },
+    "curation_status_counts": {
+      "generated_pending_approval": 7,
+      "pending": 1
+    },
+    "production_ready_count": 0,
+    "qwen_curated_count": 7,
+    "missing_backgrounds": [],
+    "missing_anchors": []
+  },
+  "coverage_gaps": {
+    "missing_registered_scene_types": [],
+    "missing_production_ready_scene_types": [
+      "bar_volume_chart",
+      "baseline_target_split",
+      "coherence_network_map",
+      "coherence_progression_sequence",
+      "dotplot_variability",
+      "future_projection",
+      "gauge_ratio_meter",
+      "hemispheric_compare",
+      "line_trajectory",
+      "measurement_primer",
+      "multi_session_trend",
+      "pathway_hub_synthesis",
+      "quality_alert",
+      "radial_kpi_ring",
+      "regional_frequency_map",
+      "roadmap_agenda",
+      "session_timeline",
+      "split_opposing_trends",
+      "state_flexibility_rest_task",
+      "table_dashboard",
+      "verdict_summary",
+      "waveform_voltage_panel"
+    ],
+    "per_scene_type": {
+      "split_opposing_trends": {
+        "registered_templates": [
+          "split_opposing_trends_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": [
+          "split_opposing_trends_v1"
+        ]
+      },
+      "multi_session_trend": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "verdict_summary": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "roadmap_agenda": {
+        "registered_templates": [
+          "roadmap_agenda_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": [
+          "roadmap_agenda_v1"
+        ]
+      },
+      "session_timeline": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "gauge_ratio_meter": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "coherence_network_map": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "hemispheric_compare": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "state_flexibility_rest_task": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "baseline_target_split": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "measurement_primer": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "future_projection": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "line_trajectory": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "bar_volume_chart": {
+        "registered_templates": [
+          "bar_volume_chart_3panel_v1",
+          "bar_volume_chart_2panel_v1",
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": [
+          "bar_volume_chart_3panel_v1",
+          "bar_volume_chart_2panel_v1"
+        ]
+      },
+      "coherence_progression_sequence": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "dotplot_variability": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "pathway_hub_synthesis": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "regional_frequency_map": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "table_dashboard": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "quality_alert": {
+        "registered_templates": [
+          "generic_data_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": []
+      },
+      "waveform_voltage_panel": {
+        "registered_templates": [
+          "waveform_voltage_panel_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": [
+          "waveform_voltage_panel_v1"
+        ]
+      },
+      "radial_kpi_ring": {
+        "registered_templates": [
+          "radial_kpi_ring_v1"
+        ],
+        "production_ready_templates": [],
+        "qwen_curated_templates": [
+          "radial_kpi_ring_v1"
+        ]
+      }
+    }
+  },
+  "approval_path": "/Users/davidmontgomery/local-explainer-video/.codex/template_approval/approval.json"
+}

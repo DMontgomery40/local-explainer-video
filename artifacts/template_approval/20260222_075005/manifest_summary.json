@@ -1,0 +1,18 @@
+{
+  "total_templates": 8,
+  "origin_counts": {
+    "qwen_curated": 7,
+    "scaffold_only": 1
+  },
+  "operational_status_counts": {
+    "dev_only": 8
+  },
+  "curation_status_counts": {
+    "generated_pending_approval": 7,
+    "pending": 1
+  },
+  "production_ready_count": 0,
+  "qwen_curated_count": 7,
+  "missing_backgrounds": [],
+  "missing_anchors": []
+}

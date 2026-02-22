@@ -27,6 +27,7 @@ import requests
 from PIL import Image
 
 from core.image_gen import edit_image
+from core.template_pipeline.qc_policy import detect_qwen_fallback_scene_ids
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -34,7 +35,12 @@ from core.voice_gen import (
     DEFAULT_ELEVENLABS_STYLE,
     DEFAULT_ELEVENLABS_TEXT_NORMALIZATION,
     DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    DEFAULT_QWEN3_TTS_LANGUAGE,
+    DEFAULT_QWEN3_TTS_MODE,
+    DEFAULT_QWEN3_TTS_SPEAKER,
     ElevenLabsTextNormalization,
+    Qwen3TTSLanguage,
+    Qwen3TTSMode,
     TTSProvider,
     generate_scene_audio,
 )
@@ -841,6 +847,13 @@ class QCPublishConfig:
     elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST
     elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE
     elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST
+    qwen3_mode: Qwen3TTSMode = DEFAULT_QWEN3_TTS_MODE
+    qwen3_language: Qwen3TTSLanguage = DEFAULT_QWEN3_TTS_LANGUAGE
+    qwen3_speaker: str = DEFAULT_QWEN3_TTS_SPEAKER
+    qwen3_voice_description: str = ""
+    qwen3_reference_audio: str = ""
+    qwen3_reference_text: str = ""
+    qwen3_style_instruction: str = ""
     image_edit_seed: int | None = None
     # Image edit model/provider used for slide text auto-fixes (Replicate or DashScope).
     # Examples:
@@ -853,6 +866,9 @@ class QCPublishConfig:
     image_edit_prompt_extend: bool = True
     image_edit_negative_prompt: str = " "
     image_edit_watermark: bool = False
+    # Deterministic template mode can bypass QC checks and keep only render+publish.
+    skip_narrative_qc: bool = False
+    skip_visual_qc: bool = False
 
 
 @dataclass
@@ -895,6 +911,110 @@ def qc_and_publish_project(
 
     _phase("Loading qEEG ground truth (Stage 4 consolidation + _data_pack.json)…")
     gt = load_qeeg_ground_truth(qeeg_dir=config.qeeg_dir, patient_label=patient_id)
+
+    fallback_scene_ids = detect_qwen_fallback_scene_ids(plan)
+    if fallback_scene_ids and (config.skip_narrative_qc or config.skip_visual_qc):
+        _log(
+            "Detected emergency Qwen fallback scene(s): "
+            + ", ".join(str(s) for s in sorted(set(fallback_scene_ids)))
+            + ". Forcing full QC path (narrative + visual) before publish."
+        )
+        config.skip_narrative_qc = False
+        config.skip_visual_qc = False
+
+    if config.skip_narrative_qc and config.skip_visual_qc:
+        _phase("QC checks skipped (deterministic template mode).")
+        scenes = plan.get("scenes")
+        if not isinstance(scenes, list) or not scenes:
+            raise QCPublishError("plan.json has no scenes")
+
+        missing_images: list[int] = []
+        missing_audio: list[int] = []
+        for i, scene in enumerate(scenes):
+            if not isinstance(scene, dict):
+                continue
+            sid = int(scene.get("id", i))
+            img = scene.get("image_path")
+            aud = scene.get("audio_path")
+            if not img or not Path(str(img)).exists():
+                missing_images.append(sid)
+            if not aud or not Path(str(aud)).exists():
+                missing_audio.append(sid)
+        if missing_images or missing_audio:
+            parts: list[str] = []
+            if missing_images:
+                parts.append(f"missing images: {sorted(set(missing_images))}")
+            if missing_audio:
+                parts.append(f"missing audio: {sorted(set(missing_audio))}")
+            raise QCPublishError("Publish requires all scene assets to exist (" + "; ".join(parts) + ").")
+
+        _phase("Rendering final video…")
+        video_path = assemble_video(
+            scenes,
+            project_dir,
+            output_filename=config.output_filename,
+            fps=config.fps,
+        )
+        _log(f"Video rendered: {video_path}")
+        _prog(0.7)
+
+        _phase("Publishing to qEEG Council portal folder…")
+        portal_copy_path: Path | None = None
+        try:
+            out_dir = config.qeeg_dir / "data" / "portal_patients" / patient_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            dest = out_dir / f"{patient_id}.mp4"
+            tmp = dest.with_name(f".{dest.name}.partial")
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            if dest.exists():
+                try:
+                    dest.unlink()
+                except Exception:
+                    pass
+            try:
+                os.link(video_path, dest)
+            except Exception:
+                shutil.copy2(video_path, tmp)
+                tmp.replace(dest)
+            portal_copy_path = dest
+            _log(f"Portal folder updated: {dest}")
+        except Exception as e:
+            _log(f"Portal folder publish failed (non-fatal): {e}")
+
+        _prog(0.85)
+        _phase("Uploading MP4 via qEEG Council backend (DB-tracked)…")
+        backend_upload_ok = False
+        backend_upload_response: dict[str, Any] | None = None
+        try:
+            url = f"{config.backend_url}/api/patients/{gt.patient_uuid}/files"
+            with open(video_path, "rb") as f:
+                files = {"file": (f"{patient_id}.mp4", f, "video/mp4")}
+                resp = requests.post(url, files=files, timeout=(10, 180))
+            if resp.status_code >= 400:
+                raise QCPublishError(f"Backend upload failed (HTTP {resp.status_code}): {resp.text[:500]}")
+            backend_upload_response = resp.json()
+            backend_upload_ok = bool(backend_upload_response.get("file"))
+            _log(f"Backend upload ok={backend_upload_ok}")
+        except Exception as e:
+            _log(f"Backend upload failed (non-fatal): {e}")
+
+        _prog(1.0)
+        _phase("Publish complete.")
+        summary = QCPublishSummary(
+            patient_id=patient_id,
+            run_id=gt.run_id,
+            applied_plan_fixes=[],
+            narrative_critical_issues=[],
+            visual_edits_applied=[],
+            video_path=video_path,
+            portal_copy_path=portal_copy_path,
+            backend_upload_ok=backend_upload_ok,
+            backend_upload_response=backend_upload_response,
+        )
+        return plan, summary
 
     _phase(f"Narrative QC (Opus: {config.opus_model})…")
     narrative_history: list[dict[str, Any]] = []
@@ -1312,6 +1432,13 @@ def qc_and_publish_project(
                     elevenlabs_similarity_boost=config.elevenlabs_similarity_boost,
                     elevenlabs_style=config.elevenlabs_style,
                     elevenlabs_use_speaker_boost=config.elevenlabs_use_speaker_boost,
+                    qwen3_mode=config.qwen3_mode,
+                    qwen3_language=config.qwen3_language,
+                    qwen3_speaker=config.qwen3_speaker,
+                    qwen3_voice_description=config.qwen3_voice_description,
+                    qwen3_reference_audio=config.qwen3_reference_audio,
+                    qwen3_reference_text=config.qwen3_reference_text,
+                    qwen3_style_instruction=config.qwen3_style_instruction,
                 )
                 scene["audio_path"] = str(path)
                 _log(f"Audio regenerated: scene {sid} -> {path}")

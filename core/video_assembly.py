@@ -83,63 +83,73 @@ def assemble_video(
     """
     project_dir = Path(project_dir)
     output_path = project_dir / output_filename
+    # Keep the real extension on temp output so ffmpeg can infer container format.
+    temp_output_path = output_path.with_name(f".{output_path.stem}.partial{output_path.suffix or '.mp4'}")
+    # Backward-compat cleanup for an earlier temp naming scheme.
+    legacy_temp_output_path = output_path.with_name(f".{output_path.name}.partial")
+    temp_audio_path = project_dir / "temp_audio.m4a"
 
-    archived_path = _archive_existing_video(output_path, project_dir)
-    if archived_path:
-        print(f"Archived previous video to: {archived_path}")
+    # Clean any stale partial from previous interrupted encodes.
+    temp_output_path.unlink(missing_ok=True)
+    legacy_temp_output_path.unlink(missing_ok=True)
 
     clips = []
     audio_clips = []  # Track for cleanup
 
     try:
-        for i, scene in enumerate(scenes):
-            image_path = scene.get("image_path")
-            audio_path = scene.get("audio_path")
+        try:
+            for i, scene in enumerate(scenes):
+                image_path = scene.get("image_path")
+                audio_path = scene.get("audio_path")
 
-            # Skip scenes without images
-            if not image_path or not Path(image_path).exists():
-                print(f"Skipping scene {scene.get('id', i)}: no image")
-                continue
+                # Skip scenes without images
+                if not image_path or not Path(image_path).exists():
+                    print(f"Skipping scene {scene.get('id', i)}: no image")
+                    continue
 
-            # Create image clip and ensure correct dimensions
-            image_clip = ImageClip(str(image_path))
-            image_clip = _ensure_dimensions(image_clip, scene.get('id', i))
+                # Create image clip and ensure correct dimensions
+                image_clip = ImageClip(str(image_path))
+                image_clip = _ensure_dimensions(image_clip, scene.get('id', i))
 
-            # Add audio if available
-            if audio_path and Path(audio_path).exists():
-                audio_clip = AudioFileClip(str(audio_path))
-                audio_clips.append(audio_clip)  # Keep reference for cleanup
-                duration = audio_clip.duration
-                image_clip = image_clip.with_duration(duration)
-                image_clip = image_clip.with_audio(audio_clip)
-            else:
-                # Use default duration if no audio
-                image_clip = image_clip.with_duration(default_duration)
+                # Add audio if available
+                if audio_path and Path(audio_path).exists():
+                    audio_clip = AudioFileClip(str(audio_path))
+                    audio_clips.append(audio_clip)  # Keep reference for cleanup
+                    duration = audio_clip.duration
+                    image_clip = image_clip.with_duration(duration)
+                    image_clip = image_clip.with_audio(audio_clip)
+                else:
+                    # Use default duration if no audio
+                    image_clip = image_clip.with_duration(default_duration)
 
-            clips.append(image_clip)
+                clips.append(image_clip)
 
-        if not clips:
-            raise ValueError("No valid scenes to assemble")
+            if not clips:
+                raise ValueError("No valid scenes to assemble")
 
-        # Concatenate all clips (hard cuts, no transitions)
-        final_video = concatenate_videoclips(clips, method="compose")
+            # Concatenate all clips (hard cuts, no transitions)
+            final_video = concatenate_videoclips(clips, method="compose")
 
-        # Write output video using CPU encoder (faster for slideshow content)
-        final_video.write_videofile(
-            str(output_path),
-            fps=fps,
-            codec="libx264",  # CPU encoding - faster for slideshow content
-            audio_codec="aac",
-            temp_audiofile=str(project_dir / "temp_audio.m4a"),
-            remove_temp=True,
-            logger="bar",  # Progress bar
-            ffmpeg_params=[
-                "-preset", "ultrafast",
-                "-crf", "35",
-                "-pix_fmt", "yuv420p",  # Compatible pixel format
-                "-movflags", "+faststart",  # Web-friendly streaming
-            ],
-        )
+            # Write output video using CPU encoder (faster for slideshow content)
+            final_video.write_videofile(
+                str(temp_output_path),
+                fps=fps,
+                codec="libx264",  # CPU encoding - faster for slideshow content
+                audio_codec="aac",
+                temp_audiofile=str(temp_audio_path),
+                remove_temp=True,
+                logger="bar",  # Progress bar
+                ffmpeg_params=[
+                    "-preset", "ultrafast",
+                    "-crf", "35",
+                    "-pix_fmt", "yuv420p",  # Compatible pixel format
+                    "-movflags", "+faststart",  # Web-friendly streaming
+                ],
+            )
+        except Exception:
+            # Never leave a half-written final artifact behind.
+            temp_output_path.unlink(missing_ok=True)
+            raise
 
     finally:
         # Clean up ALL clips after encoding
@@ -149,10 +159,20 @@ def assemble_video(
             audio_clip.close()
         if 'final_video' in locals():
             final_video.close()
+        # remove_temp=True should handle this, but interrupted runs can leave leftovers.
+        temp_audio_path.unlink(missing_ok=True)
 
-    # Validate output
-    if not output_path.exists() or output_path.stat().st_size == 0:
-        raise ValueError(f"Video assembly failed - output not created: {output_path}")
+    # Validate encoded temporary output before replacing any existing final file.
+    if not temp_output_path.exists() or temp_output_path.stat().st_size == 0:
+        raise ValueError(f"Video assembly failed - output not created: {temp_output_path}")
+
+    # Archive existing final video only after new encode succeeded.
+    archived_path = _archive_existing_video(output_path, project_dir)
+    if archived_path:
+        print(f"Archived previous video to: {archived_path}")
+
+    # Atomic swap so callers never observe a half-written final_video.mp4.
+    temp_output_path.replace(output_path)
 
     return output_path
 

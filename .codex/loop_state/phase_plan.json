@@ -1,0 +1,121 @@
+{
+  "final_phase": 5,
+  "phases": {
+    "1": {
+      "steps": [
+        {
+          "gate": "phase-gate-fast",
+          "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+          "timeout_seconds": 120,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase-gate-execution",
+          "command": "python3 -m pytest tests/execution -q",
+          "timeout_seconds": 600,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase-gate-integration-dev",
+          "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+          "timeout_seconds": 2400,
+          "severity": "blocker",
+          "type": "runtime_error",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        }
+      ]
+    },
+    "2": {
+      "steps": [
+        {
+          "gate": "phase2-generate-qwen-templates",
+          "command": "python3 scripts/generate_qwen_templates.py --live --all-archetypes",
+          "timeout_seconds": 3600,
+          "severity": "blocker",
+          "type": "external",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase2-build-anchors",
+          "command": "python3 scripts/build_template_anchors.py --all",
+          "timeout_seconds": 300,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase2-build-approval-packet",
+          "command": "python3 scripts/build_template_approval_packet.py",
+          "timeout_seconds": 300,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        }
+      ]
+    },
+    "3": {
+      "steps": [
+        {
+          "gate": "phase3-contract",
+          "command": "python3 -m pytest tests/contract/test_no_generic_prod_fallback.py tests/contract/test_manifest_contract.py -q",
+          "timeout_seconds": 300,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase3-production-integration",
+          "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode production --name production_gate",
+          "timeout_seconds": 2400,
+          "severity": "blocker",
+          "type": "runtime_error",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        }
+      ]
+    },
+    "4": {
+      "steps": [
+        {
+          "gate": "phase4-director-structured-first",
+          "command": "python3 -m pytest tests/unit/test_director_structured_first.py -q",
+          "timeout_seconds": 300,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase4-scene-schema-contract",
+          "command": "python3 -m pytest tests/unit/template_pipeline/test_scene_schema_contract.py -q",
+          "timeout_seconds": 300,
+          "severity": "blocker",
+          "type": "test_failure",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        }
+      ]
+    },
+    "5": {
+      "steps": [
+        {
+          "gate": "phase5-parity-eval",
+          "command": "python3 scripts/eval_parity.py --require-confidence 84.7",
+          "timeout_seconds": 120,
+          "severity": "blocker",
+          "type": "quality_regression",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        },
+        {
+          "gate": "phase5-final-production-e2e",
+          "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode production --name final_release_gate",
+          "timeout_seconds": 2400,
+          "severity": "blocker",
+          "type": "runtime_error",
+          "regression_test": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+        }
+      ]
+    }
+  }
+}

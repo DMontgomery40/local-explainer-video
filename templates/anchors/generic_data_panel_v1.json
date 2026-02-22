@@ -1,0 +1,112 @@
+{
+  "template_id": "generic_data_panel_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "scene_title",
+      "box": [
+        110,
+        66,
+        1444,
+        86
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "scene.title",
+          "structured_data.title",
+          "structured_data.metric"
+        ],
+        "fallback": "Brain Signal Update"
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 62,
+        "min_font_size": 34,
+        "color": "#F5FBFF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 4,
+          "color": "#00000099"
+        },
+        "glow": {
+          "radius": 6,
+          "color": "#8EC9FF66"
+        }
+      }
+    },
+    {
+      "id": "headline",
+      "box": [
+        120,
+        228,
+        1424,
+        100
+      ],
+      "align": "left",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.verdict_title",
+          "structured_data.headline",
+          "structured_data.metric",
+          "structured_data.interpretation",
+          "structured_data.status",
+          "scene.title"
+        ]
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 44,
+        "min_font_size": 24,
+        "color": "#D8EEFF",
+        "shadow": {
+          "dx": 1,
+          "dy": 2,
+          "blur": 3,
+          "color": "#00000088"
+        }
+      }
+    },
+    {
+      "id": "details",
+      "box": [
+        120,
+        336,
+        1424,
+        500
+      ],
+      "align": "left",
+      "valign": "top",
+      "binding": {
+        "mode": "summary",
+        "path": "structured_data",
+        "max_lines": 10,
+        "max_chars": 180
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 32,
+        "min_font_size": 20,
+        "color": "#C7E0F5",
+        "line_height": 1.25,
+        "shadow": {
+          "dx": 1,
+          "dy": 1,
+          "blur": 2,
+          "color": "#00000077"
+        }
+      }
+    }
+  ]
+}

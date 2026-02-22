@@ -1,0 +1,8 @@
+{
+  "approved": false,
+  "requested_utc": "2026-02-22T07:50:05Z",
+  "packet_dir": "/Users/davidmontgomery/local-explainer-video/artifacts/template_approval/20260222_075005",
+  "manifest_path": "/Users/davidmontgomery/local-explainer-video/templates/manifest.json",
+  "contact_sheet": "/Users/davidmontgomery/local-explainer-video/artifacts/template_approval/20260222_075005/template_contact_sheet.png",
+  "required_action": "Review packet and set approved=true with approved_by before resuming phase >2."
+}

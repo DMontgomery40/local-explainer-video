@@ -1,13 +1,6 @@
-"""Core modules for qEEG Explainer Video Generator."""
+"""Core package marker.
 
-from .director import generate_storyboard
-from .image_gen import generate_image, edit_image
-from .voice_gen import generate_audio
-from .video_assembly import assemble_video
+Avoid importing heavy runtime dependencies at package import time.
+"""
 
-__all__ = [
-    "generate_storyboard",
-    "generate_image",
-    "generate_audio",
-    "assemble_video",
-]
+__all__: list[str] = []

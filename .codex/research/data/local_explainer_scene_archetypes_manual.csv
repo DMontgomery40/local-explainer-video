@@ -1,0 +1,170 @@
+project,scene_id,title,archetype_code,archetype_name,image_path
+01-01-1983-0,0,Title Card,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_000.png
+01-01-1983-0,1,The Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_001.png
+01-01-1983-0,2,The Baseline Challenge,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_002.png
+01-01-1983-0,3,The Measurement Tools,MEASURE,Measurement Primer (qEEG setup),/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_003.png
+01-01-1983-0,4,The Breakthrough,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_004.png
+01-01-1983-0,5,The Efficiency Paradox,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_005.png
+01-01-1983-0,6,Neural Efficiency Explained,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_006.png
+01-01-1983-0,7,The Alpha Frequency Shift,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_007.png
+01-01-1983-0,8,The Session Two Mystery,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_008.png
+01-01-1983-0,9,Simple vs Complex Tasks,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_009.png
+01-01-1983-0,10,Processing Speed Gains,DOTPLOT,Dot-Plot / Scatter Variability,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_010.png
+01-01-1983-0,11,Network Stability,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_011.png
+01-01-1983-0,12,Synthesis: The Full Picture,PATHWAY,Pathway / Hub-and-Spoke Synthesis,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_012.png
+01-01-1983-0,13,The LUMIT Factor,AT_MECHANISM,Mechanism Illustration,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_013.png
+01-01-1983-0,14,Next Steps Forward,FUTURE,Forward Monitoring / Projection,/Users/davidmontgomery/local-explainer-video/projects/01-01-1983-0/images/scene_014.png
+01-01-1989-0,0,Title Card,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_000.png
+01-01-1989-0,1,The Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_001.png
+01-01-1989-0,2,Three Snapshots in Time,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_002.png
+01-01-1989-0,3,The Measurement Tool,MEASURE,Measurement Primer (qEEG setup),/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_003.png
+01-01-1989-0,4,The Paradox Revealed,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_004.png
+01-01-1989-0,5,Speed Versus Power,LINE_TRAJECTORY,Non-linear Line Trajectory,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_005.png
+01-01-1989-0,6,"Two Hemispheres, Two Jobs",HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_006.png
+01-01-1989-0,7,Right Side: The Speedster,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_007.png
+01-01-1989-0,8,Left Side: The Amplifier,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_008.png
+01-01-1989-0,9,The Balancing Act,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_009.png
+01-01-1989-0,10,Regional Frequency Tuning,REGIONAL,Regional Frequency Tuning Map,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_010.png
+01-01-1989-0,11,The Sensory Anchor,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_011.png
+01-01-1989-0,12,The Session Two Dip,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_012.png
+01-01-1989-0,13,The Behavior Lag Mystery,FLOW,Causal Flowchart / Processing Stages,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_013.png
+01-01-1989-0,14,What The Data Shows,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_014.png
+01-01-1989-0,15,The Path Forward,FUTURE,Forward Monitoring / Projection,/Users/davidmontgomery/local-explainer-video/projects/01-01-1989-0/images/scene_015.png
+01-01-1991-0,0,The Brain's Workaround,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_000.png
+01-01-1991-0,1,The Journey Map,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_001.png
+01-01-1991-0,2,A Complex Starting Point,TABLE,Data Table / Dashboard,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_002.png
+01-01-1991-0,3,The Measurement Tool,MEASURE,Measurement Primer (qEEG setup),/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_003.png
+01-01-1991-0,4,The Steady Wins,BAR,Bar / Volume Meter Chart,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_004.png
+01-01-1991-0,5,The Session 2 Mystery,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_005.png
+01-01-1991-0,6,High Effort Compensation,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_006.png
+01-01-1991-0,7,The Motor Strip Connection,COH_SEQ,Coherence Progression (across sessions),/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_007.png
+01-01-1991-0,8,The Session 3 Reorganization,TABLE,Data Table / Dashboard,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_008.png
+01-01-1991-0,9,The Data Quality Question,QC,Quality / Reliability Alert,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_009.png
+01-01-1991-0,10,Fast But Fragmented,DOTPLOT,Dot-Plot / Scatter Variability,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_010.png
+01-01-1991-0,11,The Theta Beta Story,BAR,Bar / Volume Meter Chart,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_011.png
+01-01-1991-0,12,Multiple Paths to Improvement,PATHWAY,Pathway / Hub-and-Spoke Synthesis,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_012.png
+01-01-1991-0,13,What the Brain Accomplished,RADIAL,Radial KPI Rings,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_013.png
+01-01-1991-0,14,The Path Forward,FUTURE,Forward Monitoring / Projection,/Users/davidmontgomery/local-explainer-video/projects/01-01-1991-0/images/scene_014.png
+01-01-2013-0,0,A Young Brain Rewiring,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_000.png
+01-01-2013-0,1,Our Journey Map,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_001.png
+01-01-2013-0,2,The Patient and Timeline,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_002.png
+01-01-2013-0,3,The Baseline Puzzle,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_003.png
+01-01-2013-0,4,The Alpha Awakening,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_004.png
+01-01-2013-0,5,The Left Brain Catches Up,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_005.png
+01-01-2013-0,6,Session Two's Wild Ride,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_006.png
+01-01-2013-0,7,The Coherence Flip,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_007.png
+01-01-2013-0,8,The Recovery,COH_SEQ,Coherence Progression (across sessions),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_008.png
+01-01-2013-0,9,Speed Versus Power,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_009.png
+01-01-2013-0,10,The Motor Mystery,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_010.png
+01-01-2013-0,11,Executive Function Wins,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_011.png
+01-01-2013-0,12,Quality Check,QC,Quality / Reliability Alert,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_012.png
+01-01-2013-0,13,The Adolescent Brain Advantage,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_013.png
+01-01-2013-0,14,The LUMIT Connection,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/01-01-2013-0/images/scene_014.png
+01-19-1966-0,0,A Brain Working Smarter,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_000.png
+01-19-1966-0,1,What We'll Explore,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_001.png
+01-19-1966-0,2,A Complex Case,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_002.png
+01-19-1966-0,3,Mapping Brain Activity,MEASURE,Measurement Primer (qEEG setup),/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_003.png
+01-19-1966-0,4,The Breakthrough Discovery,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_004.png
+01-19-1966-0,5,The Puzzle Emerges,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_005.png
+01-19-1966-0,6,The Alpha Slowdown,REGIONAL,Regional Frequency Tuning Map,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_006.png
+01-19-1966-0,7,Compensatory Power,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_007.png
+01-19-1966-0,8,Right Brain Takes Over,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_008.png
+01-19-1966-0,9,Software vs Hardware,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_009.png
+01-19-1966-0,10,Session 3 Anomaly,LINE_TRAJECTORY,Non-linear Line Trajectory,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_010.png
+01-19-1966-0,11,The Theta-Beta Spike,LINE_TRAJECTORY,Non-linear Line Trajectory,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_011.png
+01-19-1966-0,12,The Simple Explanation,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_012.png
+01-19-1966-0,13,The Overall Trajectory,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_013.png
+01-19-1966-0,14,LUMIT Treatment Success,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/01-19-1966-0/images/scene_014.png
+04-08-1997-0,0,Title Card,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_000.png
+04-08-1997-0,1,The Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_001.png
+04-08-1997-0,2,Meet the Patient,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_002.png
+04-08-1997-0,3,The Measurement Tool,MEASURE,Measurement Primer (qEEG setup),/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_003.png
+04-08-1997-0,4,The Breakthrough,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_004.png
+04-08-1997-0,5,Session 2 Peak,TABLE,Data Table / Dashboard,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_005.png
+04-08-1997-0,6,Brain Timing Synchronization,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_006.png
+04-08-1997-0,7,Voltage Amplification,BAR,Bar / Volume Meter Chart,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_007.png
+04-08-1997-0,8,The Session 3 Puzzle,LINE_TRAJECTORY,Non-linear Line Trajectory,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_008.png
+04-08-1997-0,9,Metric Resilience,TABLE,Data Table / Dashboard,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_009.png
+04-08-1997-0,10,Processing Stage Shift,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_010.png
+04-08-1997-0,11,Attention Regulation,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_011.png
+04-08-1997-0,12,Alpha Frequency Slowing,REGIONAL,Regional Frequency Tuning Map,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_012.png
+04-08-1997-0,13,Parietal Recruitment Pattern,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_013.png
+04-08-1997-0,14,Pattern Synthesis,PATHWAY,Pathway / Hub-and-Spoke Synthesis,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_014.png
+04-08-1997-0,15,Conclusion and Next Steps,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/04-08-1997-0/images/scene_015.png
+07-14-2008-0,0,Title Card,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_000.png
+07-14-2008-0,1,Our Investigation Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_001.png
+07-14-2008-0,2,The Starting Point,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_002.png
+07-14-2008-0,3,The P300 Breakthrough,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_003.png
+07-14-2008-0,4,What P300 Means in Autism,BAR,Bar / Volume Meter Chart,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_004.png
+07-14-2008-0,5,Executive Control Transforms,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_005.png
+07-14-2008-0,6,Setting Up the Mystery,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_006.png
+07-14-2008-0,7,Rest State - Network Quieting,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_007.png
+07-14-2008-0,8,Task State - Beta Network Explosion,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_008.png
+07-14-2008-0,9,The Solution - State Flexibility,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_009.png
+07-14-2008-0,10,Why This Matters in Autism,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_010.png
+07-14-2008-0,11,Frontal Regions Join the Team,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_011.png
+07-14-2008-0,12,The Mechanism,AT_MECHANISM,Mechanism Illustration,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_012.png
+07-14-2008-0,13,The Broader Picture,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_013.png
+07-14-2008-0,14,Conclusion and Next Steps,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/07-14-2008-0/images/scene_014.png
+09-05-1954-0,0,Title Card: A Brain Finding Its Rhythm,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_000.png
+09-05-1954-0,1,Roadmap: What We Will Explore,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_001.png
+09-05-1954-0,2,The Patient and Baseline,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_002.png
+09-05-1954-0,3,The Brain as an Orchestra,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_003.png
+09-05-1954-0,4,Signal Strength: Nearly Doubled,BAR,Bar / Volume Meter Chart,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_004.png
+09-05-1954-0,5,Processing Speed: From Lagging to Landing,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_005.png
+09-05-1954-0,6,Reaction Time: Faster and Steadier,DOTPLOT,Dot-Plot / Scatter Variability,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_006.png
+09-05-1954-0,7,The Orchestra Was Out of Sync,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_007.png
+09-05-1954-0,8,The Orchestra Finds Its Rhythm,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_008.png
+09-05-1954-0,9,Fronto-Central Coordination: Building Session by Session,COH_SEQ,Coherence Progression (across sessions),/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_009.png
+09-05-1954-0,10,Frontal Alpha Balance: Left-Right Harmony,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_010.png
+09-05-1954-0,11,The Frequency Puzzle,REGIONAL,Regional Frequency Tuning Map,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_011.png
+09-05-1954-0,12,State Ratios: Quiet Normalization,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_012.png
+09-05-1954-0,15,Verdict: The Data Speaks,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/09-05-1954-0/images/scene_015.png
+09-23-1982-0,0,Title Card,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_000.png
+09-23-1982-0,1,The Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_001.png
+09-23-1982-0,2,Baseline: Too Much Voltage,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_002.png
+09-23-1982-0,3,The Crisis: Spring 2025,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_003.png
+09-23-1982-0,4,The Voltage Crash,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_004.png
+09-23-1982-0,5,December: The Comeback,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_005.png
+09-23-1982-0,6,The Goldilocks Zone,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_006.png
+09-23-1982-0,7,The Frontal Lobes Wake Up,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_007.png
+09-23-1982-0,8,Less Rumination,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_008.png
+09-23-1982-0,9,The Anomaly: Beta Spike,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_009.png
+09-23-1982-0,10,Compensatory Alertness,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_010.png
+09-23-1982-0,11,Theta-Beta Normalization,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_011.png
+09-23-1982-0,12,"Real Recovery, Not Just Contrast",SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_012.png
+09-23-1982-0,13,Looking Forward,FUTURE,Forward Monitoring / Projection,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_013.png
+09-23-1982-0,14,Conclusion and Recommendation,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/09-23-1982-0/images/scene_014.png
+10-07-1963-0,0,The Brain That Found Its Rhythm,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_000.png
+10-07-1963-0,1,The Journey Ahead,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_001.png
+10-07-1963-0,2,The Starting Point,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_002.png
+10-07-1963-0,3,"Three Phases, Not Linear Progress",TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_003.png
+10-07-1963-0,4,The Headline Discovery,MULTI_TREND,Multi-Session Trend (3 snapshots),/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_004.png
+10-07-1963-0,5,The Hidden Pattern Part 1,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_005.png
+10-07-1963-0,6,The Hidden Pattern Part 2,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_006.png
+10-07-1963-0,7,The Hidden Pattern Part 3,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_007.png
+10-07-1963-0,8,The Central Paradox,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_008.png
+10-07-1963-0,9,Power Without Speed,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_009.png
+10-07-1963-0,10,The Connectivity Explosion,COH_SEQ,Coherence Progression (across sessions),/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_010.png
+10-07-1963-0,11,The State Switching Discovery,STATE,Rest-vs-Task State Flexibility,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_011.png
+10-07-1963-0,12,What About Session 2?,LINE_TRAJECTORY,Non-linear Line Trajectory,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_012.png
+10-07-1963-0,13,How Light Therapy Could Fit,AT_MECHANISM,Mechanism Illustration,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_013.png
+10-07-1963-0,14,The Real Achievement,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_014.png
+10-07-1963-0,15,What To Watch Next,FUTURE,Forward Monitoring / Projection,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_015.png
+10-07-1963-0,16,The Bigger Picture,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_016.png
+10-07-1963-0,17,Final Reflection,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/10-07-1963-0/images/scene_017.png
+11-21-1996-0,0,When a Scattered Brain Learned to Fire Together,AT_TITLE,Atmospheric Title / Closing Card,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_000.png
+11-21-1996-0,1,Our Investigation Roadmap,ROADMAP,Roadmap / Agenda List,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_001.png
+11-21-1996-0,2,The Fog State,BASELINE_SPLIT,Baseline vs Target Split Metric,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_002.png
+11-21-1996-0,3,The Puzzle Appears,COH_MAP,Coherence Network Map (single state),/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_003.png
+11-21-1996-0,4,The Synchronization Discovery,COH_SEQ,Coherence Progression (across sessions),/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_004.png
+11-21-1996-0,5,What That Lag Meant,AT_METAPHOR,Atmospheric Metaphor Scene,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_005.png
+11-21-1996-0,6,Executive Function Triumph,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_006.png
+11-21-1996-0,7,The Right Brain Takeover,HEMI,Hemispheric Lateralization Compare,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_007.png
+11-21-1996-0,8,Arousal System Normalization,GAUGE,Gauge / Arc / Ratio Meter,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_008.png
+11-21-1996-0,9,Processing Speed Reality Check,SPLIT,Split Comparison (opposing trends),/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_009.png
+11-21-1996-0,10,The Sensory Gating Clue,WAVEFORM,Waveform Panel (N100/P300),/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_010.png
+11-21-1996-0,11,The Time-of-Day Factor,TIMELINE,Session Timeline / Milestone Dates,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_011.png
+11-21-1996-0,12,Reaction Time Gains,DOTPLOT,Dot-Plot / Scatter Variability,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_012.png
+11-21-1996-0,13,Data Quality Note,QC,Quality / Reliability Alert,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_013.png
+11-21-1996-0,14,The Path Forward,SUMMARY,Verdict / Checklist Summary,/Users/davidmontgomery/local-explainer-video/projects/11-21-1996-0/images/scene_014.png

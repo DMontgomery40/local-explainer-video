@@ -1,0 +1,100 @@
+{
+  "created_utc": "2026-02-22T07:46:57Z",
+  "manifest_path": "/Users/davidmontgomery/local-explainer-video/templates/manifest.json",
+  "env_loaded": "/Users/davidmontgomery/local-explainer-video/.env",
+  "replicate_token_present": true,
+  "live": false,
+  "model": "qwen/qwen-image-2512",
+  "target_count": 7,
+  "generated_count": 0,
+  "failed_count": 0,
+  "artifact_dir": "/Users/davidmontgomery/local-explainer-video/artifacts/template_generation/20260222_074657",
+  "rows": [
+    {
+      "template_id": "bar_volume_chart_3panel_v1",
+      "scene_types": [
+        "bar_volume_chart"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/bar_volume_chart_3panel_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template bar_volume_chart_3panel_v1. Archetype focus: bar_volume_chart. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "bar_volume_chart_2panel_v1",
+      "scene_types": [
+        "bar_volume_chart"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/bar_volume_chart_2panel_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template bar_volume_chart_2panel_v1. Archetype focus: bar_volume_chart. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "split_opposing_trends_v1",
+      "scene_types": [
+        "split_opposing_trends"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/split_opposing_trends_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template split_opposing_trends_v1. Archetype focus: split_opposing_trends. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "roadmap_agenda_v1",
+      "scene_types": [
+        "roadmap_agenda"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/roadmap_agenda_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template roadmap_agenda_v1. Archetype focus: roadmap_agenda. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "waveform_voltage_panel_v1",
+      "scene_types": [
+        "waveform_voltage_panel"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/waveform_voltage_panel_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template waveform_voltage_panel_v1. Archetype focus: waveform_voltage_panel. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "radial_kpi_ring_v1",
+      "scene_types": [
+        "radial_kpi_ring"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/radial_kpi_ring_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template radial_kpi_ring_v1. Archetype focus: radial_kpi_ring. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    },
+    {
+      "template_id": "title_card_v1",
+      "scene_types": [
+        "atmospheric_title_card",
+        "atmospheric_metaphor_scene",
+        "atmospheric_mechanism_scene"
+      ],
+      "output_path": "/Users/davidmontgomery/local-explainer-video/templates/backgrounds/title_card_v1.png",
+      "model": "qwen/qwen-image-2512",
+      "live": false,
+      "prompt": "Text-free cinematic medical background for template title_card_v1. Archetype focus: atmospheric_title_card, atmospheric_metaphor_scene, atmospheric_mechanism_scene. Premium qEEG visual style, atmospheric depth, clean composition, no labels, no letters, no numbers, no words, no watermarks, no logos, no UI chrome.",
+      "timestamp_utc": "2026-02-22T07:46:57Z",
+      "status": "dry_run"
+    }
+  ]
+}

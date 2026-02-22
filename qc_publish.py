@@ -58,6 +58,11 @@ def main() -> int:
         default="",
         help='Override image edit model (e.g., "qwen-image-edit-max" for DashScope or "qwen/qwen-image-edit-2511" for Replicate).',
     )
+    parser.add_argument(
+        "--skip-qc",
+        action="store_true",
+        help="Skip narrative/visual QC checks and only run render+publish.",
+    )
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
@@ -71,6 +76,8 @@ def main() -> int:
         raise SystemExit("Unable to infer patient id; provide --patient-id MM-DD-YYYY-N")
 
     plan = load_plan(project_dir)
+    plan_template_mode = bool((plan.get("meta") or {}).get("use_template_pipeline"))
+    skip_qc = bool(args.skip_qc or plan_template_mode)
     cfg = QCPublishConfig(
         qeeg_dir=Path(str(args.qeeg_dir).strip()).expanduser().resolve(),
         backend_url=str(args.backend_url).rstrip("/"),
@@ -81,6 +88,8 @@ def main() -> int:
         fps=int(args.fps),
         output_filename=str(args.output),
         image_edit_model=(str(args.image_edit_model).strip() or None),
+        skip_narrative_qc=skip_qc,
+        skip_visual_qc=skip_qc,
     )
 
     def log(msg: str) -> None:

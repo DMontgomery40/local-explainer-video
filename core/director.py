@@ -1,12 +1,20 @@
 """LLM-based storyboard generation for qEEG explainer videos."""
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Literal
 
 import anthropic
 import openai
+
+from core.template_pipeline import (
+    SceneTyperError,
+    annotate_scenes_with_types,
+    use_template_pipeline,
+    validate_scenes as validate_typed_scenes,
+)
 
 # Singleton LLM clients
 _openai_client = None
@@ -41,6 +49,54 @@ def load_prompt(name: str) -> str:
     return _PROMPTS[name]
 
 
+def _allow_scene_typer_fallback() -> bool:
+    raw = str(os.getenv("ALLOW_DOWNSTREAM_SCENE_TYPER_FALLBACK", "true")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _extract_json_payload(raw_text: str) -> dict | list:
+    text = str(raw_text or "").strip()
+    if not text:
+        raise ValueError("Empty model response")
+
+    if "```json" in text:
+        start = text.index("```json") + len("```json")
+        end = text.find("```", start)
+        text = text[start:end if end != -1 else None].strip()
+    elif "```" in text:
+        start = text.index("```") + len("```")
+        end = text.find("```", start)
+        text = text[start:end if end != -1 else None].strip()
+
+    candidates = [text]
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = text.find(opener)
+        end = text.rfind(closer)
+        if start != -1 and end != -1 and end > start:
+            fragment = text[start : end + 1].strip()
+            if fragment and fragment not in candidates:
+                candidates.append(fragment)
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    raise ValueError("Could not parse JSON payload from model response")
+
+
+def _scenes_have_structured_payloads(scenes: list[dict]) -> bool:
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            return False
+        if not scene.get("scene_type"):
+            return False
+        if not isinstance(scene.get("structured_data"), dict):
+            return False
+    return True
+
+
 def generate_storyboard(
     input_text: str,
     provider: Literal["openai", "anthropic"] = "openai",
@@ -56,6 +112,15 @@ def generate_storyboard(
         List of scene dictionaries with id, title, narration, visual_prompt
     """
     system_prompt = load_prompt("director_system")
+    template_mode = use_template_pipeline()
+    output_contract = (
+        "Return the storyboard as a JSON object with key `scenes`.\n"
+        "Each scene must include: id, title, narration, scene_type, structured_data.\n"
+        "Include visual_prompt only when needed (especially atmospheric scenes)."
+        if template_mode
+        else "Return the storyboard as a JSON array of scenes."
+    )
+
     user_prompt = f"""Create a storyboard for an explainer video based on this qEEG analysis.
 
 CRITICAL: Total narration must be 950-1,100 words (6-7 min video).
@@ -65,17 +130,53 @@ Target ~15 scenes, ~50 words average per content scene. Count as you go.
 {input_text}
 ---
 
-Return the storyboard as a JSON array of scenes."""
-
+{output_contract}"""
     if provider == "openai":
-        return _generate_with_openai(system_prompt, user_prompt)
+        scenes = _generate_with_openai(
+            system_prompt,
+            user_prompt,
+            require_visual_prompt=not template_mode,
+        )
     elif provider == "anthropic":
-        return _generate_with_anthropic(system_prompt, user_prompt)
+        scenes = _generate_with_anthropic(
+            system_prompt,
+            user_prompt,
+            require_visual_prompt=not template_mode,
+        )
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
+    if template_mode:
+        # Structured-first path: if the director already produced typed scenes,
+        # validate and use them directly.
+        if _scenes_have_structured_payloads(scenes):
+            return validate_typed_scenes(scenes)
 
-def _generate_with_openai(system_prompt: str, user_prompt: str) -> list[dict]:
+        if not _allow_scene_typer_fallback():
+            raise ValueError(
+                "Template pipeline requires `scene_type + structured_data` from director output. "
+                "Downstream scene typer fallback is disabled."
+            )
+
+        try:
+            typed = annotate_scenes_with_types(
+                scenes=scenes,
+                input_text=input_text,
+                provider=provider,
+            )
+        except SceneTyperError as exc:
+            raise ValueError(f"Downstream scene typer fallback failed: {exc}") from exc
+        return validate_typed_scenes(typed)
+
+    return scenes
+
+
+def _generate_with_openai(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    require_visual_prompt: bool,
+) -> list[dict]:
     """Generate storyboard using OpenAI GPT-5.1 Responses API."""
     client = _get_openai_client()
 
@@ -108,10 +209,15 @@ def _generate_with_openai(system_prompt: str, user_prompt: str) -> list[dict]:
         else:
             raise ValueError("Could not find scenes array in response")
 
-    return _validate_scenes(scenes)
+    return _validate_scenes(scenes, require_visual_prompt=require_visual_prompt)
 
 
-def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]:
+def _generate_with_anthropic(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    require_visual_prompt: bool,
+) -> list[dict]:
     """Generate storyboard using Anthropic Claude Sonnet 4 with extended thinking."""
     client = _get_anthropic_client()
 
@@ -138,17 +244,7 @@ def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]
     if not content:
         raise ValueError("No text response from model")
 
-    # Extract JSON from response (Claude may wrap it in markdown)
-    if "```json" in content:
-        start = content.index("```json") + 7
-        end = content.index("```", start)
-        content = content[start:end].strip()
-    elif "```" in content:
-        start = content.index("```") + 3
-        end = content.index("```", start)
-        content = content[start:end].strip()
-
-    result = json.loads(content)
+    result = _extract_json_payload(content)
 
     # Handle both direct array and wrapped object responses
     if isinstance(result, list):
@@ -163,10 +259,14 @@ def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]
         else:
             raise ValueError("Could not find scenes array in response")
 
-    return _validate_scenes(scenes)
+    return _validate_scenes(scenes, require_visual_prompt=require_visual_prompt)
 
 
-def _validate_scenes(scenes: list[dict]) -> list[dict]:
+def _validate_scenes(
+    scenes: list[dict],
+    *,
+    require_visual_prompt: bool,
+) -> list[dict]:
     """Validate and normalize scene data."""
     validated = []
     for i, scene in enumerate(scenes):
@@ -175,10 +275,10 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
 
         if not narration:
             raise ValueError(f"Scene {i+1} has empty narration")
-        if not visual_prompt:
+        if require_visual_prompt and not visual_prompt:
             raise ValueError(f"Scene {i+1} has empty visual prompt")
 
-        validated.append({
+        normalized_scene = {
             "id": scene.get("id", i),
             "uid": scene.get("uid", str(uuid.uuid4())[:8]),
             "title": scene.get("title", f"Scene {i + 1}"),
@@ -187,7 +287,12 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
             "refinement_history": scene.get("refinement_history", []),
             "image_path": scene.get("image_path"),
             "audio_path": scene.get("audio_path"),
-        })
+        }
+        if scene.get("scene_type") is not None:
+            normalized_scene["scene_type"] = scene.get("scene_type")
+        if scene.get("structured_data") is not None:
+            normalized_scene["structured_data"] = scene.get("structured_data")
+        validated.append(normalized_scene)
     return validated
 
 

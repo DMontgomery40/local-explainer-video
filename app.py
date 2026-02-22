@@ -38,12 +38,18 @@ from core.voice_gen import (
     DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
     DEFAULT_ELEVENLABS_VOICE,
     DEFAULT_EXAGGERATION,
+    DEFAULT_QWEN3_TTS_LANGUAGE,
+    DEFAULT_QWEN3_TTS_MODE,
+    DEFAULT_QWEN3_TTS_SPEAKER,
     DEFAULT_SPEED,
     DEFAULT_VOICE,
     ELEVENLABS_VOICES,
     KOKORO_VOICES,
+    QWEN3_TTS_LANGUAGES,
+    QWEN3_TTS_MODES,
+    QWEN3_TTS_SPEAKERS,
     generate_scene_audio,
- )
+)
 from core.video_assembly import assemble_video, get_video_duration, preview_scene
 from core.qc_publish import (
     QCPublishConfig,
@@ -54,6 +60,14 @@ from core.qc_publish import (
     default_qeeg_backend_url,
     infer_patient_id,
     qc_and_publish_project,
+)
+from core.template_pipeline import (
+    ALL_SCENE_TYPES,
+    SCHEMA_VERSION as TEMPLATE_SCHEMA_VERSION,
+    annotate_scenes_with_types,
+    normalize_scene_type,
+    use_template_pipeline as template_pipeline_default_enabled,
+    validate_scenes as validate_typed_scenes,
 )
 
 # Load environment variables (override shell env vars with .env file)
@@ -177,6 +191,22 @@ def init_session_state():
     if "tts_elevenlabs_use_speaker_boost" not in st.session_state:
         st.session_state.tts_elevenlabs_use_speaker_boost = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST
 
+    # Qwen3-TTS specific settings
+    if "tts_qwen3_mode" not in st.session_state:
+        st.session_state.tts_qwen3_mode = DEFAULT_QWEN3_TTS_MODE
+    if "tts_qwen3_language" not in st.session_state:
+        st.session_state.tts_qwen3_language = DEFAULT_QWEN3_TTS_LANGUAGE
+    if "tts_qwen3_speaker" not in st.session_state:
+        st.session_state.tts_qwen3_speaker = DEFAULT_QWEN3_TTS_SPEAKER
+    if "tts_qwen3_voice_description" not in st.session_state:
+        st.session_state.tts_qwen3_voice_description = ""
+    if "tts_qwen3_reference_audio" not in st.session_state:
+        st.session_state.tts_qwen3_reference_audio = ""
+    if "tts_qwen3_reference_text" not in st.session_state:
+        st.session_state.tts_qwen3_reference_text = ""
+    if "tts_qwen3_style_instruction" not in st.session_state:
+        st.session_state.tts_qwen3_style_instruction = ""
+
     # Image generation model (used for Generate/Regenerate Image and batch image generation).
     if "image_model" not in st.session_state:
         st.session_state.image_model = _normalize_image_model(os.getenv("IMAGE_MODEL"))
@@ -186,6 +216,8 @@ def init_session_state():
         )
     if "sync_image_model_from_plan" not in st.session_state:
         st.session_state.sync_image_model_from_plan = False
+    if "use_template_pipeline" not in st.session_state:
+        st.session_state.use_template_pipeline = bool(template_pipeline_default_enabled())
     if st.session_state.sync_image_model_from_plan:
         st.session_state.image_model = _plan_image_model(
             st.session_state.get("plan"),
@@ -196,6 +228,8 @@ def init_session_state():
             meta = plan.get("meta")
             if isinstance(meta, dict) and "use_eeg_10_20_guide" in meta:
                 st.session_state.use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide"))
+            if isinstance(meta, dict) and "use_template_pipeline" in meta:
+                st.session_state.use_template_pipeline = bool(meta.get("use_template_pipeline"))
         st.session_state.sync_image_model_from_plan = False
 
     # Image edit model (used for both UI "Edit Image" and QC auto-fix slide text).
@@ -242,6 +276,22 @@ def _tts_kwargs_from_state() -> dict:
                 "elevenlabs_similarity_boost": float(st.session_state.tts_elevenlabs_similarity_boost),
                 "elevenlabs_style": float(st.session_state.tts_elevenlabs_style),
                 "elevenlabs_use_speaker_boost": bool(st.session_state.tts_elevenlabs_use_speaker_boost),
+            }
+        )
+        return kwargs
+
+    if provider == "qwen3":
+        kwargs.update(
+            {
+                # Keep voice populated for plan/meta/QC compatibility; qwen3_speaker is authoritative.
+                "voice": st.session_state.tts_qwen3_speaker,
+                "qwen3_mode": st.session_state.tts_qwen3_mode,
+                "qwen3_language": st.session_state.tts_qwen3_language,
+                "qwen3_speaker": st.session_state.tts_qwen3_speaker,
+                "qwen3_voice_description": st.session_state.tts_qwen3_voice_description,
+                "qwen3_reference_audio": st.session_state.tts_qwen3_reference_audio,
+                "qwen3_reference_text": st.session_state.tts_qwen3_reference_text,
+                "qwen3_style_instruction": st.session_state.tts_qwen3_style_instruction,
             }
         )
         return kwargs
@@ -334,12 +384,21 @@ def render_sidebar():
                 "Appends a structural 10-20 placement reminder to each image prompt. "
                 "This is guidance only (camera angles/composition still vary)."
             ),
-        )
+            )
         if st.session_state.image_model == IMAGEN_4_MODEL and st.session_state.use_eeg_10_20_guide:
             st.caption(
                 "Note: Replicate Imagen 4 currently accepts text prompts only (no reference-image input), "
                 "so the 10-20 map is injected as text guidance."
             )
+
+        st.checkbox(
+            "Use deterministic template pipeline",
+            key="use_template_pipeline",
+            help=(
+                "When enabled, data-bearing scenes render from local templates + structured_data "
+                "instead of runtime image-model generation."
+            ),
+        )
 
         st.divider()
 
@@ -463,6 +522,7 @@ def render_sidebar():
         tts_providers = {
             "kokoro": "Kokoro (Free, Local)",
             "elevenlabs": "ElevenLabs (Flash v2.5, Premium)",
+            "qwen3": "Qwen3 TTS (Replicate)",
             "openai": "OpenAI TTS",
         }
         provider_keys = list(tts_providers.keys())
@@ -473,7 +533,10 @@ def render_sidebar():
             format_func=lambda p: tts_providers[p],
             index=provider_keys.index(current_provider),
             key="tts_provider_selector",
-            help="ElevenLabs Flash v2.5 expects narration numbers to be written out as words (no digits).",
+            help=(
+                "ElevenLabs Flash v2.5 works best when narration numbers are written as words. "
+                "Qwen3 voice_clone requires a reference audio URL/path."
+            ),
         )
         st.session_state.tts_provider = selected_provider
 
@@ -577,6 +640,82 @@ def render_sidebar():
                 key="elevenlabs_text_normalization",
                 help="Controls ElevenLabs text normalization (may affect latency; Flash v2.5 may limit this on some plans).",
             )
+        elif selected_provider == "qwen3":
+            if not keys.get("replicate"):
+                st.error("REPLICATE_API_TOKEN missing. Add it to .env to use Qwen3 TTS.")
+
+            mode_options = list(QWEN3_TTS_MODES)
+            if st.session_state.tts_qwen3_mode not in mode_options:
+                st.session_state.tts_qwen3_mode = DEFAULT_QWEN3_TTS_MODE
+            st.session_state.tts_qwen3_mode = st.selectbox(
+                "Mode",
+                options=mode_options,
+                index=mode_options.index(st.session_state.tts_qwen3_mode),
+                key="qwen3_mode_selector",
+                help=(
+                    "custom_voice = preset speaker, "
+                    "voice_clone = clone from reference audio, "
+                    "voice_design = generate voice from text description."
+                ),
+            )
+
+            language_options = list(QWEN3_TTS_LANGUAGES)
+            if st.session_state.tts_qwen3_language not in language_options:
+                st.session_state.tts_qwen3_language = DEFAULT_QWEN3_TTS_LANGUAGE
+            st.session_state.tts_qwen3_language = st.selectbox(
+                "Language",
+                options=language_options,
+                index=language_options.index(st.session_state.tts_qwen3_language),
+                key="qwen3_language_selector",
+                help="Use 'auto' for automatic language detection.",
+            )
+
+            mode = st.session_state.tts_qwen3_mode
+            if mode == "custom_voice":
+                speaker_options = list(QWEN3_TTS_SPEAKERS)
+                if st.session_state.tts_qwen3_speaker not in speaker_options:
+                    st.session_state.tts_qwen3_speaker = DEFAULT_QWEN3_TTS_SPEAKER
+                st.session_state.tts_qwen3_speaker = st.selectbox(
+                    "Speaker",
+                    options=speaker_options,
+                    index=speaker_options.index(st.session_state.tts_qwen3_speaker),
+                    key="qwen3_speaker_selector",
+                    help="Preset speaker voice for custom_voice mode.",
+                )
+            elif mode == "voice_design":
+                st.session_state.tts_qwen3_voice_description = st.text_area(
+                    "Voice Description",
+                    value=st.session_state.tts_qwen3_voice_description,
+                    key="qwen3_voice_description_input",
+                    help=(
+                        "Natural-language description of the target voice "
+                        "(for example: 'A warm, friendly female voice with a slight British accent')."
+                    ),
+                )
+                if not str(st.session_state.tts_qwen3_voice_description).strip():
+                    st.warning("Voice Description is required for voice_design mode.")
+            else:
+                st.session_state.tts_qwen3_reference_audio = st.text_input(
+                    "Reference Audio",
+                    value=st.session_state.tts_qwen3_reference_audio,
+                    key="qwen3_reference_audio_input",
+                    help="HTTP(S) URL or local file path to a reference audio sample for cloning.",
+                )
+                st.session_state.tts_qwen3_reference_text = st.text_area(
+                    "Reference Text (optional)",
+                    value=st.session_state.tts_qwen3_reference_text,
+                    key="qwen3_reference_text_input",
+                    help="Transcript of the reference audio (recommended for best cloning quality).",
+                )
+                if not str(st.session_state.tts_qwen3_reference_audio).strip():
+                    st.warning("Reference Audio is required for voice_clone mode.")
+
+            st.session_state.tts_qwen3_style_instruction = st.text_area(
+                "Style Instruction (optional)",
+                value=st.session_state.tts_qwen3_style_instruction,
+                key="qwen3_style_instruction_input",
+                help="Optional style/emotion instruction, e.g. 'speak slowly and calmly'.",
+            )
 
         st.divider()
 
@@ -653,17 +792,25 @@ def render_step_1():
                 # Create project directory
                 project_dir.mkdir(parents=True, exist_ok=True)
 
+                # Keep core pipeline flag in sync with UI selection.
+                os.environ["USE_TEMPLATE_PIPELINE"] = "true" if st.session_state.use_template_pipeline else "false"
+
                 # Generate storyboard
                 scenes = generate_storyboard(input_text, provider=provider)
+                if st.session_state.use_template_pipeline:
+                    scenes = validate_typed_scenes(scenes)
 
                 # Create plan
                 plan = {
                     "meta": {
+                        "schema_version": TEMPLATE_SCHEMA_VERSION if st.session_state.use_template_pipeline else "legacy-2.x",
                         "project_name": project_dir.name,
                         "created_utc": datetime.utcnow().isoformat(),
                         "llm_provider": provider,
                         "image_model": _normalize_image_model(st.session_state.image_model),
                         "use_eeg_10_20_guide": bool(st.session_state.use_eeg_10_20_guide),
+                        "use_template_pipeline": bool(st.session_state.use_template_pipeline),
+                        "render_pipeline": "template_deterministic" if st.session_state.use_template_pipeline else "legacy_qwen",
                         "input_text": input_text,
                     },
                     "scenes": scenes,
@@ -690,15 +837,23 @@ def render_step_2():
     plan = st.session_state.plan
     project_dir = st.session_state.project_dir
     scenes = plan["scenes"]
+    template_mode = bool(plan.get("meta", {}).get("use_template_pipeline") or st.session_state.use_template_pipeline)
     image_model = _normalize_image_model(st.session_state.image_model)
     use_eeg_10_20_guide = bool(st.session_state.use_eeg_10_20_guide)
+    use_template_pipeline = bool(st.session_state.use_template_pipeline)
+    os.environ["USE_TEMPLATE_PIPELINE"] = "true" if use_template_pipeline else "false"
     meta = plan.setdefault("meta", {})
     if (
         meta.get("image_model") != image_model
         or bool(meta.get("use_eeg_10_20_guide")) != use_eeg_10_20_guide
+        or bool(meta.get("use_template_pipeline")) != use_template_pipeline
     ):
         meta["image_model"] = image_model
         meta["use_eeg_10_20_guide"] = use_eeg_10_20_guide
+        meta["use_template_pipeline"] = use_template_pipeline
+        meta["render_pipeline"] = "template_deterministic" if use_template_pipeline else "legacy_qwen"
+        if use_template_pipeline:
+            meta["schema_version"] = TEMPLATE_SCHEMA_VERSION
         save_plan(project_dir, plan)
 
     # Back button
@@ -708,6 +863,37 @@ def render_step_2():
 
     st.divider()
 
+    if use_template_pipeline:
+        missing_typed = [
+            int(s.get("id", idx))
+            for idx, s in enumerate(scenes)
+            if not isinstance(s.get("structured_data"), dict) or not normalize_scene_type(s.get("scene_type"))
+        ]
+        if missing_typed:
+            st.warning(
+                "Some scenes are missing `scene_type` / `structured_data` and cannot render "
+                "deterministically yet."
+            )
+            if st.button("Auto-Type Scenes (Template Pipeline)", key="auto_type_scenes_btn"):
+                with st.spinner("Assigning scene types and structured data..."):
+                    try:
+                        provider = str(meta.get("llm_provider") or "openai")
+                        input_text = str(meta.get("input_text") or "")
+                        typed_scenes = annotate_scenes_with_types(
+                            scenes=scenes,
+                            input_text=input_text,
+                            provider=provider if provider in {"openai", "anthropic"} else "openai",
+                        )
+                        plan["scenes"] = validate_typed_scenes(typed_scenes)
+                        meta["schema_version"] = TEMPLATE_SCHEMA_VERSION
+                        meta["use_template_pipeline"] = True
+                        meta["render_pipeline"] = "template_deterministic"
+                        save_plan(project_dir, plan)
+                        st.success("Scenes typed successfully.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Scene typing failed: {e}")
+
     # Add scene at start button
     if st.button("➕ Add Scene at Beginning", key="add_scene_start"):
         new_scene = {
@@ -716,6 +902,8 @@ def render_step_2():
             "title": "New Scene",
             "narration": "",
             "visual_prompt": "",
+            "scene_type": "atmospheric_title_card" if use_template_pipeline else None,
+            "structured_data": {"title": "New Scene"} if use_template_pipeline else None,
             "refinement_history": [],
             "image_path": None,
             "audio_path": None,
@@ -758,6 +946,8 @@ def render_step_2():
                         "title": "New Scene",
                         "narration": "",
                         "visual_prompt": "",
+                        "scene_type": "atmospheric_title_card" if use_template_pipeline else None,
+                        "structured_data": {"title": "New Scene"} if use_template_pipeline else None,
                         "refinement_history": [],
                         "image_path": None,
                         "audio_path": None,
@@ -820,15 +1010,59 @@ def render_step_2():
 
                 st.divider()
 
+                if use_template_pipeline:
+                    normalized_scene_type = normalize_scene_type(scene.get("scene_type")) or "bar_volume_chart"
+                    scene_type_options = list(ALL_SCENE_TYPES)
+                    if normalized_scene_type not in scene_type_options:
+                        scene_type_options.insert(0, normalized_scene_type)
+                    selected_scene_type = st.selectbox(
+                        "Scene Type",
+                        options=scene_type_options,
+                        index=scene_type_options.index(normalized_scene_type),
+                        key=f"scene_type_{scene_uid}",
+                        help="Deterministic template archetype for this scene.",
+                    )
+                    if selected_scene_type != scene.get("scene_type"):
+                        scene["scene_type"] = selected_scene_type
+                        save_plan(project_dir, plan)
+
+                    raw_structured = scene.get("structured_data")
+                    if not isinstance(raw_structured, dict):
+                        raw_structured = {}
+                    structured_json = st.text_area(
+                        "Structured Data (JSON)",
+                        value=json.dumps(raw_structured, indent=2, ensure_ascii=False),
+                        height=220,
+                        key=f"structured_data_{scene_uid}",
+                        help="All deterministic on-screen values come from this payload.",
+                    )
+                    if st.button("Apply Structured Data", key=f"apply_structured_{scene_uid}"):
+                        try:
+                            parsed = json.loads(structured_json)
+                            if not isinstance(parsed, dict):
+                                raise ValueError("structured_data must be a JSON object")
+                            scene["structured_data"] = parsed
+                            save_plan(project_dir, plan)
+                            st.success("Structured data updated.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Invalid structured_data JSON: {e}")
+
+                    template_id = scene.get("template_id")
+                    if template_id:
+                        st.caption(f"Template: `{template_id}`")
+
+                    st.divider()
+
                 # Visual prompt
                 new_prompt = st.text_area(
                     "Visual Prompt",
-                    value=scene["visual_prompt"],
+                    value=scene.get("visual_prompt", ""),
                     height=100,
                     key=f"visual_prompt_{scene_uid}",
                 )
 
-                if new_prompt != scene["visual_prompt"]:
+                if new_prompt != scene.get("visual_prompt", ""):
                     scene["visual_prompt"] = new_prompt
                     save_plan(project_dir, plan)
 
@@ -846,7 +1080,12 @@ def render_step_2():
 
                 with col_a:
                     if st.button("Refine Prompt", key=f"refine_prompt_{scene_uid}",
-                                 help="Update the text prompt, then regenerate"):
+                                 disabled=use_template_pipeline,
+                                 help=(
+                                     "Update the text prompt, then regenerate"
+                                     if not use_template_pipeline
+                                     else "Disabled in deterministic template mode"
+                                 )):
                         if refinement.strip():
                             with st.spinner("Refining prompt..."):
                                 try:
@@ -871,8 +1110,12 @@ def render_step_2():
                 with col_b:
                     has_image = scene.get("image_path") and Path(scene["image_path"]).exists()
                     if st.button("Edit Image", key=f"edit_image_{scene_uid}",
-                                 disabled=not has_image,
-                                 help="Directly edit the existing image"):
+                                 disabled=not has_image or use_template_pipeline,
+                                 help=(
+                                     "Directly edit the existing image"
+                                     if not use_template_pipeline
+                                     else "Disabled in deterministic template mode"
+                                 )):
                         if not refinement.strip():
                             st.warning("Enter edit instructions above first")
                         elif has_image:
@@ -907,6 +1150,8 @@ def render_step_2():
             with col2:
                 # Image preview and generation
                 st.subheader("Image")
+                if use_template_pipeline:
+                    st.caption("Deterministic mode: renders local template + structured_data (no runtime image API call).")
                 overrides = _scene_generation_overrides(scene)
                 is_qwen_model = _normalize_image_model(st.session_state.image_model).startswith("qwen/qwen-image")
                 has_ref_marker = EEG_10_20_REF_MARKER in str(scene.get("visual_prompt", ""))
@@ -914,7 +1159,7 @@ def render_step_2():
                 if has_ref_marker:
                     st.caption("EEG reference marker detected in prompt; brain-map reference image will be attached automatically.")
 
-                if is_qwen_model:
+                if is_qwen_model and not use_template_pipeline:
                     default_guidance = default_qwen_guidance_for_prompt(str(scene.get("visual_prompt", "")))
                     current_guidance = overrides.get("guidance")
                     guidance_value = (
@@ -959,7 +1204,8 @@ def render_step_2():
                         scene.setdefault("gen_overrides", {})["force_use_eeg_ref"] = bool(force_ref_new)
                         save_plan(project_dir, plan)
                 else:
-                    st.caption("Per-scene guidance/negative controls are available when Qwen image model is selected.")
+                    if not use_template_pipeline:
+                        st.caption("Per-scene guidance/negative controls are available when Qwen image model is selected.")
 
                 if scene.get("image_path") and Path(scene["image_path"]).exists():
                     st.image(scene["image_path"], use_container_width=True)
@@ -1356,14 +1602,20 @@ def render_step_3():
 
     st.divider()
     st.subheader("QC + Publish")
-    st.caption(
-        "Runs a final verification pass against qEEG Council ground truth, optionally fixes slide text via image-edit (no regeneration), "
-        "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
-    )
-    st.caption(
-        "Narrative QC may apply small 'safe fixes' to plan.json (high-confidence string replacements). "
-        "Full narrative trace is written to qc_narrative_report.json in the project folder."
-    )
+    if template_mode:
+        st.caption(
+            "Deterministic template mode is active. Text correctness is guaranteed by structured_data + local rendering, "
+            "so QC checks are skipped and this action performs render + publish only."
+        )
+    else:
+        st.caption(
+            "Runs a final verification pass against qEEG Council ground truth, optionally fixes slide text via image-edit (no regeneration), "
+            "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
+        )
+        st.caption(
+            "Narrative QC may apply small 'safe fixes' to plan.json (high-confidence string replacements). "
+            "Full narrative trace is written to qc_narrative_report.json in the project folder."
+        )
 
     guessed_patient_id = infer_patient_id(project_dir.name) if project_dir else None
     patient_id = st.text_input(
@@ -1401,24 +1653,28 @@ def render_step_3():
             key="qc_cliproxy_api_key",
         )
 
-    max_passes = st.number_input(
-        "Max visual QC passes",
-        min_value=1,
-        max_value=10,
-        value=5,
-        help="Only used when auto-fix is enabled (recheck images after edits until all clear).",
-        key="qc_max_passes",
-    )
+    if template_mode:
+        max_passes = 1
+        auto_fix_images = False
+    else:
+        max_passes = st.number_input(
+            "Max visual QC passes",
+            min_value=1,
+            max_value=10,
+            value=5,
+            help="Only used when auto-fix is enabled (recheck images after edits until all clear).",
+            key="qc_max_passes",
+        )
 
-    auto_fix_images = st.checkbox(
-        "Auto-fix slide text (image edit)",
-        value=False,
-        help=(
-            "If enabled, QC will attempt deterministic text edits on the existing PNGs via Qwen Image Edit. "
-            "If disabled, QC will only report issues (writes qc_visual_issues.json) and block publish."
-        ),
-        key="qc_auto_fix_images",
-    )
+        auto_fix_images = st.checkbox(
+            "Auto-fix slide text (image edit)",
+            value=False,
+            help=(
+                "If enabled, QC will attempt deterministic text edits on the existing PNGs via Qwen Image Edit. "
+                "If disabled, QC will only report issues (writes qc_visual_issues.json) and block publish."
+            ),
+            key="qc_auto_fix_images",
+        )
 
     narrative_report_path = project_dir / "qc_narrative_report.json"
     if narrative_report_path.exists():
@@ -1428,7 +1684,8 @@ def render_step_3():
             except Exception as e:
                 st.warning(f"Could not read {narrative_report_path}: {e}")
 
-    run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
+    qc_button_label = "Render + Publish (Skip QC)" if template_mode else "Run QC + Publish"
+    run_qc = st.button(qc_button_label, type="primary", key="qc_publish_btn")
     if run_qc:
         if not patient_id.strip():
             st.error("Enter a Patient ID (MM-DD-YYYY-N) to run QC.")
@@ -1466,10 +1723,25 @@ def render_step_3():
                     "elevenlabs_style": float(st.session_state.tts_elevenlabs_style),
                     "elevenlabs_use_speaker_boost": bool(st.session_state.tts_elevenlabs_use_speaker_boost),
                 }
+                qc_qwen3 = {}
+            elif tts_provider == "qwen3":
+                qc_tts_voice = st.session_state.tts_qwen3_speaker
+                qc_tts_speed = 1.0
+                qc_elevenlabs = {}
+                qc_qwen3 = {
+                    "qwen3_mode": st.session_state.tts_qwen3_mode,
+                    "qwen3_language": st.session_state.tts_qwen3_language,
+                    "qwen3_speaker": st.session_state.tts_qwen3_speaker,
+                    "qwen3_voice_description": st.session_state.tts_qwen3_voice_description,
+                    "qwen3_reference_audio": st.session_state.tts_qwen3_reference_audio,
+                    "qwen3_reference_text": st.session_state.tts_qwen3_reference_text,
+                    "qwen3_style_instruction": st.session_state.tts_qwen3_style_instruction,
+                }
             else:
                 qc_tts_voice = st.session_state.tts_voice
                 qc_tts_speed = float(st.session_state.tts_speed)
                 qc_elevenlabs = {}
+                qc_qwen3 = {}
 
             cfg = QCPublishConfig(
                 qeeg_dir=Path((qeeg_dir or "").strip()).expanduser().resolve(),
@@ -1484,7 +1756,10 @@ def render_step_3():
                 tts_voice=qc_tts_voice,
                 tts_speed=qc_tts_speed,
                 image_edit_model=str(st.session_state.image_edit_model),
+                skip_narrative_qc=bool(template_mode),
+                skip_visual_qc=bool(template_mode),
                 **qc_elevenlabs,
+                **qc_qwen3,
             )
 
             updated_plan, summary = qc_and_publish_project(
@@ -1654,12 +1929,20 @@ def render_batch_queue():
                 use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide"))
             else:
                 use_eeg_10_20_guide = bool(st.session_state.use_eeg_10_20_guide)
+            use_template_pipeline_project = bool(
+                meta.get("use_template_pipeline", st.session_state.use_template_pipeline)
+            )
             if (
                 meta.get("image_model") != image_model
                 or bool(meta.get("use_eeg_10_20_guide")) != use_eeg_10_20_guide
+                or bool(meta.get("use_template_pipeline")) != use_template_pipeline_project
             ):
                 meta["image_model"] = image_model
                 meta["use_eeg_10_20_guide"] = use_eeg_10_20_guide
+                meta["use_template_pipeline"] = use_template_pipeline_project
+                if use_template_pipeline_project:
+                    meta["schema_version"] = TEMPLATE_SCHEMA_VERSION
+                    meta["render_pipeline"] = "template_deterministic"
             project_result = {
                 "name": project_name,
                 "images": 0,
@@ -1670,6 +1953,7 @@ def render_batch_queue():
 
             # Generate missing images
             if generate_images:
+                os.environ["USE_TEMPLATE_PIPELINE"] = "true" if use_template_pipeline_project else "false"
                 for scene in scenes:
                     if not scene.get("image_path") or not Path(scene["image_path"]).exists():
                         try:

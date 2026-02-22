@@ -1,0 +1,481 @@
+{
+  "phase": 2,
+  "cycle": 0,
+  "status": "WAITING_TEMPLATE_APPROVAL",
+  "open_failures_by_gate": {},
+  "last_resolved_by_gate": {
+    "1:phase-gate-fast": "L-20260222-071429-c9a69b",
+    "1:phase-gate-integration-dev": "L-20260222-071706-b2aed8"
+  },
+  "failed_gate_events": [
+    {
+      "timestamp_utc": "2026-02-22T07:14:29Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1 --timeout=120",
+      "learning_entry_id": "L-20260222-071429-c9a69b"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:17:06Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "signal": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --template-mode development --name integration_gate",
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:33:09Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "signal": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --template-mode development --name integration_gate",
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:35:15Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "signal": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    }
+  ],
+  "successful_gate_events": [
+    {
+      "timestamp_utc": "2026-02-22T07:14:46Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "learning_entry_id": "L-20260222-071429-c9a69b",
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:49Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/execution -q",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:09Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:12Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/execution -q",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:26Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:29Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/execution -q",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:13Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:16Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/execution -q",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:41:19Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "learning_entry_id": "L-20260222-071706-b2aed8",
+      "signal": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:17Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:20Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "learning_entry_id": null,
+      "signal": "python3 -m pytest tests/execution -q",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:48:17Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "learning_entry_id": null,
+      "signal": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "phase": 2,
+      "gate": "phase2-generate-qwen-templates",
+      "learning_entry_id": null,
+      "signal": "python3 scripts/generate_qwen_templates.py --live --all-archetypes",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "phase": 2,
+      "gate": "phase2-build-anchors",
+      "learning_entry_id": null,
+      "signal": "python3 scripts/build_template_anchors.py --all",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:06Z",
+      "phase": 2,
+      "gate": "phase2-build-approval-packet",
+      "learning_entry_id": null,
+      "signal": "python3 scripts/build_template_approval_packet.py",
+      "regression_test_added": "/Users/davidmontgomery/local-explainer-video/tests/execution/test_tdd_loop_learning_hooks.py::test_phase_gate_summary_written_on_gate_execution"
+    }
+  ],
+  "phase_gate_summaries": [
+    {
+      "timestamp_utc": "2026-02-22T07:14:29Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase-gate-fast failed (4)",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:29Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase 1 blocked on phase-gate-fast",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:46Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-fast passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:49Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-execution passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:17:06Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase-gate-integration-dev failed (1)",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:17:06Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase 1 blocked on phase-gate-integration-dev",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:09Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-fast passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:12Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-execution passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:33:09Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase-gate-integration-dev failed (1)",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:33:09Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase 1 blocked on phase-gate-integration-dev",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:26Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-fast passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:29Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-execution passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:35:15Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase-gate-integration-dev failed (1)",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:35:15Z",
+      "phase": 1,
+      "passed": false,
+      "summary": "phase 1 blocked on phase-gate-integration-dev",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:13Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-fast passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:16Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-execution passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:41:19Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-integration-dev passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:41:19Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase 1 completed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:17Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-fast passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:20Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-execution passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:48:17Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase-gate-integration-dev passed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:48:17Z",
+      "phase": 1,
+      "passed": true,
+      "summary": "phase 1 completed",
+      "artifacts": []
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:06Z",
+      "phase": 2,
+      "passed": true,
+      "summary": "phase 2 completed",
+      "artifacts": []
+    }
+  ],
+  "phase_execution_events": [
+    {
+      "timestamp_utc": "2026-02-22T07:14:29Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1 --timeout=120",
+      "ok": false,
+      "learning_entry_id": "L-20260222-071429-c9a69b"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:46Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "ok": true,
+      "learning_entry_id": "L-20260222-071429-c9a69b"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:14:49Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "command": "python3 -m pytest tests/execution -q",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:17:06Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --template-mode development --name integration_gate",
+      "ok": false,
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:09Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:31:12Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "command": "python3 -m pytest tests/execution -q",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:33:09Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --template-mode development --name integration_gate",
+      "ok": false,
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:26Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:34:29Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "command": "python3 -m pytest tests/execution -q",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:35:15Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "ok": false,
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:13Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:40:16Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "command": "python3 -m pytest tests/execution -q",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:41:19Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "ok": true,
+      "learning_entry_id": "L-20260222-071706-b2aed8"
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:17Z",
+      "phase": 1,
+      "gate": "phase-gate-fast",
+      "command": "python3 -m pytest tests/unit tests/contract -q --maxfail=1",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:47:20Z",
+      "phase": 1,
+      "gate": "phase-gate-execution",
+      "command": "python3 -m pytest tests/execution -q",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:48:17Z",
+      "phase": 1,
+      "gate": "phase-gate-integration-dev",
+      "command": "python3 scripts/run_template_pipeline_e2e.py --source-project 09-05-1954-0 --provider openai --template-mode development --name integration_gate",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "phase": 2,
+      "gate": "phase2-generate-qwen-templates",
+      "command": "python3 scripts/generate_qwen_templates.py --live --all-archetypes",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "phase": 2,
+      "gate": "phase2-build-anchors",
+      "command": "python3 scripts/build_template_anchors.py --all",
+      "ok": true,
+      "learning_entry_id": null
+    },
+    {
+      "timestamp_utc": "2026-02-22T07:50:06Z",
+      "phase": 2,
+      "gate": "phase2-build-approval-packet",
+      "command": "python3 scripts/build_template_approval_packet.py",
+      "ok": true,
+      "learning_entry_id": null
+    }
+  ],
+  "completed_utc": "2026-02-22T07:41:19Z",
+  "last_updated_utc": "2026-02-22T07:50:06Z"
+}

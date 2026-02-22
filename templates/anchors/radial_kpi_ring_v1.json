@@ -1,0 +1,135 @@
+{
+  "template_id": "radial_kpi_ring_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "title",
+      "box": [
+        120,
+        62,
+        1424,
+        82
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.title",
+          "scene.title"
+        ]
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 30,
+        "color": "#F6FCFF"
+      }
+    },
+    {
+      "id": "ring_1",
+      "box": [
+        120,
+        270,
+        520,
+        70
+      ],
+      "align": "left",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.rings.0.label}: {structured_data.rings.0.value} {structured_data.rings.0.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 32,
+        "min_font_size": 18,
+        "color": "#D5EAFA"
+      }
+    },
+    {
+      "id": "ring_2",
+      "box": [
+        120,
+        350,
+        520,
+        70
+      ],
+      "align": "left",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.rings.1.label}: {structured_data.rings.1.value} {structured_data.rings.1.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 30,
+        "min_font_size": 18,
+        "color": "#D5EAFA"
+      }
+    },
+    {
+      "id": "ring_3",
+      "box": [
+        120,
+        430,
+        520,
+        70
+      ],
+      "align": "left",
+      "valign": "middle",
+      "binding": {
+        "mode": "template",
+        "template": "{structured_data.rings.2.label}: {structured_data.rings.2.value} {structured_data.rings.2.unit}",
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 30,
+        "min_font_size": 18,
+        "color": "#D5EAFA"
+      }
+    },
+    {
+      "id": "center",
+      "box": [
+        672,
+        445,
+        320,
+        130
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.center_label",
+          "structured_data.rings.0.value"
+        ],
+        "fallback": ""
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 52,
+        "min_font_size": 22,
+        "color": "#F8FCFF",
+        "shadow": {
+          "dx": 2,
+          "dy": 2,
+          "blur": 3,
+          "color": "#00000099"
+        }
+      }
+    }
+  ]
+}

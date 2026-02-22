@@ -1,0 +1,82 @@
+{
+  "template_id": "waveform_voltage_panel_v1",
+  "dimensions": [
+    1664,
+    928
+  ],
+  "anchors": [
+    {
+      "id": "metric",
+      "box": [
+        120,
+        62,
+        1424,
+        82
+      ],
+      "align": "center",
+      "valign": "middle",
+      "binding": {
+        "mode": "first_non_empty",
+        "paths": [
+          "structured_data.metric",
+          "scene.title"
+        ]
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "bold",
+        "font_size": 58,
+        "min_font_size": 30,
+        "color": "#F3FAFF"
+      }
+    },
+    {
+      "id": "trace_summary",
+      "box": [
+        120,
+        212,
+        1424,
+        120
+      ],
+      "align": "left",
+      "valign": "top",
+      "binding": {
+        "mode": "summary",
+        "path": "structured_data.traces",
+        "max_lines": 3,
+        "max_chars": 160
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 28,
+        "min_font_size": 18,
+        "color": "#C7E0F5"
+      }
+    },
+    {
+      "id": "details",
+      "box": [
+        120,
+        700,
+        1424,
+        140
+      ],
+      "align": "left",
+      "valign": "top",
+      "binding": {
+        "mode": "summary",
+        "path": "structured_data",
+        "max_lines": 3,
+        "max_chars": 180
+      },
+      "style": {
+        "font_family": "Inter",
+        "font_weight": "regular",
+        "font_size": 26,
+        "min_font_size": 16,
+        "color": "#D7EAF9"
+      }
+    }
+  ]
+}

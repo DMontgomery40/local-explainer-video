@@ -1,0 +1,66 @@
+{
+  "created_utc": "2026-02-22T07:50:04Z",
+  "manifest_path": "/Users/davidmontgomery/local-explainer-video/templates/manifest.json",
+  "target_count": 8,
+  "created_count": 0,
+  "failed_count": 0,
+  "artifact_dir": "/Users/davidmontgomery/local-explainer-video/artifacts/template_anchors/20260222_075004",
+  "rows": [
+    {
+      "template_id": "bar_volume_chart_3panel_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/bar_volume_chart_3panel_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "bar_volume_chart_2panel_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/bar_volume_chart_2panel_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "split_opposing_trends_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/split_opposing_trends_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "roadmap_agenda_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/roadmap_agenda_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "waveform_voltage_panel_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/waveform_voltage_panel_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "radial_kpi_ring_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/radial_kpi_ring_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "title_card_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/title_card_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    },
+    {
+      "template_id": "generic_data_panel_v1",
+      "anchors_path": "/Users/davidmontgomery/local-explainer-video/templates/anchors/generic_data_panel_v1.json",
+      "timestamp_utc": "2026-02-22T07:50:04Z",
+      "dry_run": false,
+      "status": "existing"
+    }
+  ]
+}

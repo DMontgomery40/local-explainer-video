@@ -2,6 +2,8 @@
 
 from pathlib import Path
 import base64
+from datetime import datetime, timezone
+import json
 import os
 import re
 import traceback
@@ -31,6 +33,30 @@ EEG_10_20_REFERENCE_IMAGE = Path(__file__).parent.parent / "prompts" / "qEEG-sit
 def _log(msg):
     """Debug logging to stderr (visible in Streamlit terminal)."""
     print(f"[IMAGE_GEN] {msg}", file=sys.stderr, flush=True)
+
+
+def _append_template_fallback_audit(
+    project_dir: Path,
+    *,
+    scene: dict,
+    event: str,
+    payload: dict | None = None,
+) -> None:
+    artifacts = project_dir / "artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    audit_path = artifacts / "template_fallback_audit.jsonl"
+    row = {
+        "timestamp_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "event": event,
+        "scene_id": int(scene.get("id", 0)),
+        "scene_type": str(scene.get("scene_type") or ""),
+        "template_id": str(scene.get("template_id") or ""),
+        "fallback_allowed": str(os.getenv("ALLOW_TEMPLATE_FALLBACK_TO_QWEN", "false")).strip().lower()
+        in {"1", "true", "yes", "on"},
+        "payload": payload or {},
+    }
+    with audit_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 # Replicate client with timeout to prevent indefinite hangs
@@ -669,8 +695,59 @@ def generate_scene_image(
     _log(f"  scene keys: {list(scene.keys())}")
     _log(f"  project_dir: {project_dir}")
 
-    scene_id = scene.get("id")
+    scene_id = int(scene.get("id", 0))
     _log(f"  scene_id: {scene_id}")
+
+    # Deterministic template path (default-on). This bypasses runtime image-model calls.
+    try:
+        from core.template_pipeline import (
+            allow_qwen_fallback as _allow_qwen_fallback,
+            render_scene_to_image as _render_scene_to_image,
+            scene_eligible_for_template as _scene_eligible_for_template,
+            use_template_pipeline as _use_template_pipeline,
+        )
+    except Exception as e:
+        _log(f"  template pipeline import unavailable: {e}")
+        _use_template_pipeline = lambda: False  # type: ignore[assignment]
+        _scene_eligible_for_template = lambda _scene: False  # type: ignore[assignment]
+        _allow_qwen_fallback = lambda: True  # type: ignore[assignment]
+        _render_scene_to_image = None  # type: ignore[assignment]
+
+    if _use_template_pipeline() and _scene_eligible_for_template(scene):
+        _log("  Deterministic template pipeline enabled for this scene")
+        try:
+            rendered = _render_scene_to_image(scene, project_dir=project_dir)  # type: ignore[misc]
+            _log(f"=== generate_scene_image() TEMPLATE SUCCESS: {rendered} ===")
+            return rendered
+        except Exception as e:
+            _log(f"  template render failed: {type(e).__name__}: {e}")
+            _append_template_fallback_audit(
+                project_dir,
+                scene=scene,
+                event="template_render_failed",
+                payload={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "render_error": scene.get("render_error"),
+                },
+            )
+            if not _allow_qwen_fallback():
+                scene["fallback_to_qwen"] = False
+                scene["fallback_reason"] = f"template_render_failed:{type(e).__name__}"
+                raise
+            _log("  falling back to legacy model-based generation")
+            scene["fallback_to_qwen"] = True
+            scene["render_mode"] = "qwen_fallback"
+            scene["fallback_reason"] = f"template_render_failed:{type(e).__name__}"
+            _append_template_fallback_audit(
+                project_dir,
+                scene=scene,
+                event="template_render_fallback_to_qwen",
+                payload={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
+            )
 
     prompt_raw = scene.get("visual_prompt")
     if not prompt_raw:
@@ -718,4 +795,14 @@ def generate_scene_image(
         return result
     except Exception as e:
         _log(f"=== generate_scene_image() FAILED: {type(e).__name__}: {e} ===")
+        _append_template_fallback_audit(
+            project_dir,
+            scene=scene,
+            event="legacy_generation_failed",
+            payload={
+                "error_type": type(e).__name__,
+                "error": str(e),
+                "model": model,
+            },
+        )
         raise
