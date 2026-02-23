@@ -26,8 +26,9 @@ from core.image_gen import (
     IMAGEN_4_MODEL,
     default_qwen_guidance_for_prompt,
     edit_image,
-    generate_scene_image,
 )
+from core.qeeg_data import load_latest_stage1_data_pack
+from core.visual_gen import generate_scene_visual, is_blender_scene
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -251,7 +252,7 @@ def _tts_kwargs_from_state() -> dict:
 
 
 def _image_kwargs_from_state() -> dict:
-    """Build kwargs for generate_scene_image() based on current sidebar settings."""
+    """Build kwargs for generate_scene_visual() based on current sidebar settings."""
     return {
         "model": _normalize_image_model(st.session_state.image_model),
         "use_eeg_10_20_guide": bool(st.session_state.use_eeg_10_20_guide),
@@ -265,7 +266,7 @@ def _scene_generation_overrides(scene: dict) -> dict:
 
 
 def _scene_image_kwargs(scene: dict) -> dict:
-    """Build kwargs for generate_scene_image() including per-scene overrides."""
+    """Build kwargs for generate_scene_visual() including per-scene overrides."""
     kwargs = dict(_image_kwargs_from_state())
     overrides = _scene_generation_overrides(scene)
 
@@ -282,6 +283,55 @@ def _scene_image_kwargs(scene: dict) -> dict:
         kwargs["force_use_eeg_ref"] = force_use_eeg_ref
 
     return kwargs
+
+
+def _project_patient_id(project_dir: Path, plan: dict | None = None) -> str:
+    """Resolve patient id from plan metadata or project folder naming."""
+    if isinstance(plan, dict):
+        meta = plan.get("meta")
+        if isinstance(meta, dict):
+            pid = str(meta.get("patient_id") or "").strip()
+            if pid:
+                return pid
+    return infer_patient_id(project_dir.name) or ""
+
+
+def _load_project_stage1_data_pack(project_dir: Path, plan: dict | None = None) -> dict | None:
+    """Load and cache Stage-1 `_data_pack.json` for Blender scene generation."""
+    project_key = str(project_dir.resolve())
+    patient_id = _project_patient_id(project_dir, plan)
+    qeeg_dir = default_qeeg_analysis_dir()
+    cache_key = f"{project_key}::{patient_id}::{qeeg_dir}"
+
+    cache = st.session_state.setdefault("stage1_data_pack_cache", {})
+    if cache_key in cache:
+        entry = cache.get(cache_key)
+        if isinstance(entry, dict) and entry.get("ok"):
+            payload = entry.get("data_pack")
+            return payload if isinstance(payload, dict) else None
+        return None
+
+    if not patient_id:
+        cache[cache_key] = {
+            "ok": False,
+            "error": f"Could not infer patient id from project name: {project_dir.name}",
+        }
+        return None
+
+    try:
+        resolved = load_latest_stage1_data_pack(patient_label=patient_id, qeeg_dir=qeeg_dir)
+    except Exception as e:
+        cache[cache_key] = {"ok": False, "error": str(e)}
+        return None
+
+    cache[cache_key] = {
+        "ok": True,
+        "run_id": resolved.run_id,
+        "data_pack_path": str(resolved.data_pack_path),
+        "data_pack": resolved.data_pack,
+    }
+    payload = resolved.data_pack
+    return payload if isinstance(payload, dict) else None
 
 
 def get_existing_projects() -> list[str]:
@@ -967,7 +1017,18 @@ def render_step_2():
                     if st.button("Regenerate Image", key=f"regen_image_{scene_uid}"):
                         with st.spinner("Generating image..."):
                             try:
-                                path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
+                                data_pack = _load_project_stage1_data_pack(project_dir, plan) if is_blender_scene(scene) else None
+                                if is_blender_scene(scene) and data_pack is None:
+                                    st.warning(
+                                        "No Stage-1 `_data_pack.json` found for this patient. "
+                                        "Blender scene will render without patient data unless manual scene payload is provided."
+                                    )
+                                path = generate_scene_visual(
+                                    scene,
+                                    project_dir,
+                                    data_pack=data_pack,
+                                    **_scene_image_kwargs(scene),
+                                )
                                 scene["image_path"] = str(path)
                                 save_plan(project_dir, plan)
                                 st.rerun()
@@ -979,7 +1040,18 @@ def render_step_2():
                     if st.button("Generate Image", key=f"gen_image_{scene_uid}", type="primary"):
                         with st.spinner("Generating image..."):
                             try:
-                                path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
+                                data_pack = _load_project_stage1_data_pack(project_dir, plan) if is_blender_scene(scene) else None
+                                if is_blender_scene(scene) and data_pack is None:
+                                    st.warning(
+                                        "No Stage-1 `_data_pack.json` found for this patient. "
+                                        "Blender scene will render without patient data unless manual scene payload is provided."
+                                    )
+                                path = generate_scene_visual(
+                                    scene,
+                                    project_dir,
+                                    data_pack=data_pack,
+                                    **_scene_image_kwargs(scene),
+                                )
                                 scene["image_path"] = str(path)
                                 save_plan(project_dir, plan)
                                 st.rerun()
@@ -1053,13 +1125,25 @@ def render_step_2():
             failed_scenes = []
             generated = 0
             skipped = 0
+            needs_blender_data = any(is_blender_scene(scene) for scene in scenes if isinstance(scene, dict))
+            project_data_pack = _load_project_stage1_data_pack(project_dir, plan) if needs_blender_data else None
+            if needs_blender_data and project_data_pack is None:
+                st.warning(
+                    "No Stage-1 `_data_pack.json` found for this patient. "
+                    "Blender scenes may render without patient data unless manual scene payload is provided."
+                )
 
             for i, scene in enumerate(scenes):
                 has_image = scene.get("image_path") and Path(scene["image_path"]).exists()
                 if not has_image:
                     status.text(f"Generating image {i+1}/{len(scenes)}: {scene['title'][:30]}...")
                     try:
-                        path = generate_scene_image(scene, project_dir, **_scene_image_kwargs(scene))
+                        path = generate_scene_visual(
+                            scene,
+                            project_dir,
+                            data_pack=project_data_pack if is_blender_scene(scene) else None,
+                            **_scene_image_kwargs(scene),
+                        )
                         scene["image_path"] = str(path)
                         save_plan(project_dir, plan)
                         generated += 1
@@ -1153,6 +1237,13 @@ def render_step_2():
         if total == 0:
             st.warning("No scenes found.")
             return
+        needs_blender_data = any(is_blender_scene(scene) for scene in scenes if isinstance(scene, dict))
+        project_data_pack = _load_project_stage1_data_pack(project_dir, plan) if needs_blender_data else None
+        if needs_blender_data and project_data_pack is None:
+            st.warning(
+                "No Stage-1 `_data_pack.json` found for this patient. "
+                "Blender scenes may render without patient data unless manual scene payload is provided."
+            )
 
         img_col, aud_col = st.columns(2)
         with img_col:
@@ -1191,7 +1282,12 @@ def render_step_2():
                         if isinstance(force_ref_override, bool):
                             scene_kwargs["force_use_eeg_ref"] = bool(force_ref_override)
 
-                        path = generate_scene_image(scene, project_dir, **scene_kwargs)
+                        path = generate_scene_visual(
+                            scene,
+                            project_dir,
+                            data_pack=project_data_pack if is_blender_scene(scene) else None,
+                            **scene_kwargs,
+                        )
                         with lock:
                             scene["image_path"] = str(path)
                             save_plan(project_dir, plan)
@@ -1667,6 +1763,12 @@ def render_batch_queue():
                 "video": False,
                 "errors": [],
             }
+            needs_blender_data = any(is_blender_scene(scene) for scene in scenes if isinstance(scene, dict))
+            project_data_pack = _load_project_stage1_data_pack(project_dir, plan) if needs_blender_data else None
+            if needs_blender_data and project_data_pack is None:
+                project_result["errors"].append(
+                    "No Stage-1 `_data_pack.json` found; Blender scenes may render without patient data."
+                )
 
             # Generate missing images
             if generate_images:
@@ -1688,9 +1790,10 @@ def render_batch_queue():
                             if isinstance(force_ref_override, bool):
                                 scene_kwargs["force_use_eeg_ref"] = bool(force_ref_override)
 
-                            path = generate_scene_image(
+                            path = generate_scene_visual(
                                 scene,
                                 project_dir,
+                                data_pack=project_data_pack if is_blender_scene(scene) else None,
                                 **scene_kwargs,
                             )
                             scene["image_path"] = str(path)

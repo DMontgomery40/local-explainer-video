@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import time
 import zlib
 from dataclasses import dataclass
@@ -26,7 +27,10 @@ import numpy as np
 import requests
 from PIL import Image
 
+from core.blender_gen import blender_scene_video_path, render_blender_scenes_batch
 from core.image_gen import edit_image
+from core.qc_video import video_qc_sample_times
+from core.visual_gen import is_blender_scene
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -129,6 +133,68 @@ def image_change_metrics(
     per_pixel = diff.mean(axis=2)
     changed_ratio = float((per_pixel > float(per_pixel_threshold)).mean())
     return mean_abs, changed_ratio
+
+
+def _probe_video_duration_seconds(video_path: Path) -> float | None:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    raw = str(proc.stdout or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except Exception:
+        return None
+    return value if value > 0.0 else None
+
+
+def _extract_video_qc_frames(*, video_path: Path, out_dir: Path, scene_id: int) -> list[tuple[str, Path]]:
+    """
+    Extract deterministic QC frame samples from a rendered scene video.
+
+    Returns:
+      list of (frame_tag, png_path)
+    """
+    duration_s = _probe_video_duration_seconds(video_path)
+    samples = video_qc_sample_times(duration_s)
+    out: list[tuple[str, Path]] = []
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for idx, (tag, t_s) in enumerate(samples):
+        frame_path = out_dir / f"scene_{int(scene_id):03d}__{idx:02d}_{tag}.png"
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{float(t_s):.3f}",
+            "-i",
+            str(video_path),
+            "-frames:v",
+            "1",
+            str(frame_path),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if proc.returncode != 0 or not frame_path.exists():
+            details = (proc.stderr or proc.stdout or "").strip()
+            raise QCPublishError(
+                f"Failed extracting QC frame ({tag}) from video scene {scene_id}: {video_path}\n"
+                + (details[-700:] if details else "No ffmpeg diagnostics available.")
+            )
+        out.append((tag, frame_path))
+    return out
 
 
 def _repo_root() -> Path:
@@ -1001,6 +1067,43 @@ def qc_and_publish_project(
             _log(f"- {issue}")
         raise QCPublishError("Narrative QC found critical issues. Fix them, then re-run QC.")
 
+    scenes = plan.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise QCPublishError("plan.json has no scenes")
+
+    blender_scenes = [scene for scene in scenes if isinstance(scene, dict) and is_blender_scene(scene)]
+    if blender_scenes:
+        _phase(f"Rendering Blender scenes ({len(blender_scenes)})…")
+        try:
+            rendered = render_blender_scenes_batch(
+                blender_scenes,
+                project_dir,
+                data_pack=gt.data_pack,
+                log=_log,
+            )
+        except Exception as e:
+            raise QCPublishError(f"Blender render failed before visual QC: {e}") from e
+
+        for i, scene in enumerate(blender_scenes):
+            scene_id = int(scene.get("id", i))
+            out = rendered.get(scene_id)
+            if out is None or not Path(str(out)).exists():
+                raise QCPublishError(f"Blender render output missing for scene {scene_id}")
+            scene["image_path"] = str(out)
+            video_out = blender_scene_video_path(project_dir, scene_id)
+            if video_out.exists():
+                scene["video_path"] = str(video_out)
+            else:
+                scene.pop("video_path", None)
+
+        try:
+            (project_dir / "plan.json").write_text(
+                json.dumps(plan, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            raise QCPublishError(f"Failed saving plan after Blender render: {e}") from e
+
     _phase(f"Visual QC (Gemini: {config.gemini_model})…")
     cliproxy = CLIProxyClient(base_url=config.cliproxy_url, api_key=config.cliproxy_api_key)
     try:
@@ -1012,10 +1115,6 @@ def qc_and_publish_project(
         raise QCPublishError(f"Gemini model not found in CLIProxy /v1/models (preferred={config.gemini_model!r}).")
     if gemini_model_id != config.gemini_model:
         _log(f"Gemini model resolved: {config.gemini_model!r} -> {gemini_model_id!r}")
-
-    scenes = plan.get("scenes")
-    if not isinstance(scenes, list) or not scenes:
-        raise QCPublishError("plan.json has no scenes")
 
     missing_images: list[int] = []
     missing_audio: list[int] = []
@@ -1050,6 +1149,7 @@ def qc_and_publish_project(
                 continue
             scene_id = scene.get("id", i)
             image_path = scene.get("image_path")
+            video_path = scene.get("video_path")
             if not image_path:
                 continue
             img_path = Path(str(image_path))
@@ -1083,6 +1183,73 @@ def qc_and_publish_project(
             }
 
             _prog((i + 1) / max(1, len(scenes)) * 0.6)
+
+            video_qc_mode = bool(video_path and Path(str(video_path)).exists())
+            if video_qc_mode:
+                frame_dir = project_dir / ".qc_frames"
+                frame_paths: list[tuple[str, Path]] = []
+                try:
+                    frame_paths = _extract_video_qc_frames(
+                        video_path=Path(str(video_path)),
+                        out_dir=frame_dir,
+                        scene_id=int(scene_id) if isinstance(scene_id, int) else int(i),
+                    )
+                except Exception as e:
+                    raise QCPublishError(
+                        f"Failed preparing animated-scene QC frames for scene {scene_id}: {e}"
+                    ) from e
+
+                try:
+                    frame_issues: list[dict[str, Any]] = []
+                    for frame_tag, frame_img in frame_paths:
+                        frame_context = dict(scene_context)
+                        frame_context["video_frame_tag"] = frame_tag
+                        res_frame = run_gemini_visual_qc(
+                            cliproxy=cliproxy,
+                            image_path=frame_img,
+                            scene_context=frame_context,
+                            data_pack=gt.data_pack,
+                            model=gemini_model_id,
+                        )
+                        if not res_frame.passed and not res_frame.replacements:
+                            frame_issues.append(
+                                {
+                                    "scene_id": scene_id,
+                                    "slide_num": int(scene_id) + 1 if isinstance(scene_id, int) else None,
+                                    "image_path": str(frame_img),
+                                    "video_path": str(video_path),
+                                    "frame_tag": frame_tag,
+                                    "replacements": [],
+                                    "notes": res_frame.notes,
+                                    "manual_review_required": True,
+                                }
+                            )
+                            continue
+                        if res_frame.replacements:
+                            frame_issues.append(
+                                {
+                                    "scene_id": scene_id,
+                                    "slide_num": int(scene_id) + 1 if isinstance(scene_id, int) else None,
+                                    "image_path": str(frame_img),
+                                    "video_path": str(video_path),
+                                    "frame_tag": frame_tag,
+                                    "replacements": res_frame.replacements,
+                                    "notes": res_frame.notes,
+                                    # Animated scenes currently run in report-only mode for visual issues.
+                                    "manual_review_required": True,
+                                }
+                            )
+
+                    if frame_issues:
+                        visual_issues.extend(frame_issues)
+                    # Animated scenes are not edited in-place by image-edit.
+                    continue
+                finally:
+                    for _, tmp_path in frame_paths:
+                        try:
+                            tmp_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
 
             res = run_gemini_visual_qc(
                 cliproxy=cliproxy,

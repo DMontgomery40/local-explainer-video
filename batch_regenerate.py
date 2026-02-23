@@ -22,7 +22,13 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from core.director import generate_storyboard
-from core.image_gen import DEFAULT_IMAGE_GEN_MODEL, IMAGEN_4_MODEL, generate_scene_image
+from core.image_gen import DEFAULT_IMAGE_GEN_MODEL, IMAGEN_4_MODEL
+from core.qeeg_data import (
+    default_qeeg_analysis_dir,
+    infer_patient_id,
+    load_latest_stage1_data_pack,
+)
+from core.visual_gen import generate_scene_visual, is_blender_scene
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -201,14 +207,37 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     save_plan(project_dir, new_plan)
     print(f"  Saved new plan.json")
 
+    project_data_pack: dict | None = None
+    has_blender_scenes = any(is_blender_scene(scene) for scene in scenes if isinstance(scene, dict))
+    if has_blender_scenes:
+        patient_id = infer_patient_id(project_name)
+        if not patient_id:
+            print(
+                "  WARNING: Blender scenes detected but patient id could not be inferred from project name; "
+                "continuing without Stage-1 data pack."
+            )
+        else:
+            qeeg_dir_arg = str(ARGS.get("qeeg_dir") or "").strip()
+            qeeg_dir = Path(qeeg_dir_arg).expanduser().resolve() if qeeg_dir_arg else default_qeeg_analysis_dir()
+            try:
+                pack = load_latest_stage1_data_pack(patient_label=patient_id, qeeg_dir=qeeg_dir)
+                project_data_pack = pack.data_pack
+                print(f"  Loaded Stage-1 data pack: run={pack.run_id} path={pack.data_pack_path}")
+            except Exception as e:
+                print(
+                    "  WARNING: Could not load Stage-1 `_data_pack.json` for Blender scenes "
+                    f"(patient={patient_id}, qeeg_dir={qeeg_dir}): {e}"
+                )
+
     # Step 2: Generate images
     print(f"\n[2/4] Generating images...")
     for i, scene in enumerate(scenes):
         print(f"  Scene {i+1}/{len(scenes)}: {scene.get('title', 'Untitled')[:40]}...")
         try:
-            path = generate_scene_image(
+            path = generate_scene_visual(
                 scene,
                 project_dir,
+                data_pack=project_data_pack if is_blender_scene(scene) else None,
                 model=image_model,
                 use_eeg_10_20_guide=use_eeg_10_20_guide,
             )
@@ -279,6 +308,12 @@ def main():
         dest="use_eeg_10_20_guide",
         help="Disable the 10-20 electrode-placement reminder.",
     )
+    parser.add_argument(
+        "--qeeg-dir",
+        type=str,
+        default="",
+        help="Path to qEEG-analysis repo for loading Stage-1 `_data_pack.json` when Blender scenes are present.",
+    )
     parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: kokoro, elevenlabs, openai (default: from plan meta or kokoro)")
     parser.add_argument("--tts-voice", type=str, default="", help="TTS voice (Kokoro voice id or ElevenLabs voice name)")
     parser.add_argument("--tts-speed", type=float, default=0.0, help="TTS speed (Kokoro or ElevenLabs). 0 means default/from meta.")
@@ -314,6 +349,7 @@ def main():
         "elevenlabs_style": float(args.elevenlabs_style) if args.elevenlabs_style else 0.0,
         # Note: presence of the flag is meaningful; absence means "use meta/default"
         "elevenlabs_use_speaker_boost": True if args.elevenlabs_use_speaker_boost else None,
+        "qeeg_dir": (args.qeeg_dir or "").strip(),
     }
 
     if args.projects:

@@ -1,9 +1,10 @@
 """LLM-based storyboard generation for qEEG explainer videos."""
 
 import json
+import re
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 import anthropic
 import openai
@@ -32,13 +33,45 @@ def _get_anthropic_client():
 # Cached prompts
 _PROMPTS: dict[str, str] = {}
 
+_ELECTRODE_LABEL_RE = re.compile(
+    r"\b(?:Fp1|Fp2|Fpz|F7|F3|Fz|F4|F8|T3|C3|Cz|C4|T4|T5|P3|Pz|P4|T6|O1|O2|Oz|A1|A2|T7|T8|P7|P8)\b",
+    flags=re.IGNORECASE,
+)
+_BLENDER_HINT_TERMS: tuple[str, ...] = (
+    "electrode",
+    "topomap",
+    "topography",
+    "coherence",
+    "connectivity",
+    "brain map",
+    "eeg",
+)
+
 
 def load_prompt(name: str) -> str:
     """Load a prompt from the prompts directory (cached)."""
     if name not in _PROMPTS:
         prompt_path = Path(__file__).parent.parent / "prompts" / f"{name}.txt"
-        _PROMPTS[name] = prompt_path.read_text()
+        _PROMPTS[name] = prompt_path.read_text(encoding="utf-8")
     return _PROMPTS[name]
+
+
+def _build_director_system_prompt() -> str:
+    """
+    Build the director system prompt, optionally appending Blender-scene skill guidance.
+
+    The base prompt still works on its own; the Blender skill file can be added/iterated
+    without changing Python code.
+    """
+    base = load_prompt("director_system").rstrip()
+    skill_name = "director_blender_skill"
+    skill_path = Path(__file__).parent.parent / "prompts" / f"{skill_name}.txt"
+    if not skill_path.exists():
+        return base
+    skill = load_prompt(skill_name).strip()
+    if not skill:
+        return base
+    return f"{base}\n\n{skill}"
 
 
 def generate_storyboard(
@@ -55,7 +88,7 @@ def generate_storyboard(
     Returns:
         List of scene dictionaries with id, title, narration, visual_prompt
     """
-    system_prompt = load_prompt("director_system")
+    system_prompt = _build_director_system_prompt()
     user_prompt = f"""Create a storyboard for an explainer video based on this qEEG analysis.
 
 CRITICAL: Total narration must be 950-1,100 words (6-7 min video).
@@ -166,6 +199,28 @@ def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]
     return _validate_scenes(scenes)
 
 
+def _looks_like_blender_scene(scene: Mapping[str, Any]) -> bool:
+    backend = str(scene.get("render_backend") or "").strip().lower()
+    if backend == "blender":
+        return True
+    if isinstance(scene.get("blender"), Mapping):
+        return True
+
+    text_parts = []
+    for key in ("visual_prompt", "title", "subtitle"):
+        value = scene.get(key)
+        if isinstance(value, str) and value.strip():
+            text_parts.append(value.strip().lower())
+    text = " ".join(text_parts)
+    if not text:
+        return False
+    if _ELECTRODE_LABEL_RE.search(text):
+        return True
+    if "brain" in text and any(term in text for term in _BLENDER_HINT_TERMS):
+        return True
+    return False
+
+
 def _validate_scenes(scenes: list[dict]) -> list[dict]:
     """Validate and normalize scene data."""
     validated = []
@@ -178,7 +233,7 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
         if not visual_prompt:
             raise ValueError(f"Scene {i+1} has empty visual prompt")
 
-        validated.append({
+        normalized: dict[str, Any] = {
             "id": scene.get("id", i),
             "uid": scene.get("uid", str(uuid.uuid4())[:8]),
             "title": scene.get("title", f"Scene {i + 1}"),
@@ -187,7 +242,33 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
             "refinement_history": scene.get("refinement_history", []),
             "image_path": scene.get("image_path"),
             "audio_path": scene.get("audio_path"),
-        })
+        }
+
+        # Preserve optional structured fields the director may emit for Blender scenes.
+        for key in (
+            "render_backend",
+            "subtitle",
+            "footer",
+            "band",
+            "metric",
+            "session_index",
+            "qeeg_extract",
+            "electrode_values",
+            "coherence_edges",
+            "scene_type",
+            "style_preset",
+            "camera_preset",
+        ):
+            if key in scene:
+                normalized[key] = scene.get(key)
+        blender_payload = scene.get("blender")
+        if isinstance(blender_payload, Mapping):
+            normalized["blender"] = dict(blender_payload)
+
+        if _looks_like_blender_scene(normalized):
+            normalized["render_backend"] = "blender"
+
+        validated.append(normalized)
     return validated
 
 

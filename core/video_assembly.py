@@ -5,6 +5,7 @@ from pathlib import Path
 from moviepy import (
     AudioFileClip,
     ImageClip,
+    VideoFileClip,
     concatenate_videoclips,
 )
 
@@ -13,7 +14,7 @@ TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 
 
-def _ensure_dimensions(clip: ImageClip, scene_id: int = 0) -> ImageClip:
+def _ensure_dimensions(clip, scene_id: int = 0):
     """
     Resize clip to target dimensions if mismatched.
 
@@ -72,7 +73,7 @@ def assemble_video(
     Assemble scenes into a final video.
 
     Args:
-        scenes: List of scene dictionaries with image_path and audio_path
+        scenes: List of scene dictionaries with image_path/video_path and audio_path
         project_dir: Project directory containing assets
         output_filename: Name of the output video file
         fps: Frames per second for the output video
@@ -93,30 +94,36 @@ def assemble_video(
 
     try:
         for i, scene in enumerate(scenes):
+            video_path = scene.get("video_path")
             image_path = scene.get("image_path")
             audio_path = scene.get("audio_path")
+            scene_label = scene.get("id", i)
 
-            # Skip scenes without images
-            if not image_path or not Path(image_path).exists():
-                print(f"Skipping scene {scene.get('id', i)}: no image")
+            has_video = bool(video_path and Path(video_path).exists())
+            has_image = bool(image_path and Path(image_path).exists())
+            if not has_video and not has_image:
+                print(f"Skipping scene {scene_label}: no video/image")
                 continue
 
-            # Create image clip and ensure correct dimensions
-            image_clip = ImageClip(str(image_path))
-            image_clip = _ensure_dimensions(image_clip, scene.get('id', i))
+            if has_video:
+                base_clip = VideoFileClip(str(video_path))
+            else:
+                base_clip = ImageClip(str(image_path))
+            base_clip = _ensure_dimensions(base_clip, scene_label)
 
             # Add audio if available
             if audio_path and Path(audio_path).exists():
                 audio_clip = AudioFileClip(str(audio_path))
                 audio_clips.append(audio_clip)  # Keep reference for cleanup
                 duration = audio_clip.duration
-                image_clip = image_clip.with_duration(duration)
-                image_clip = image_clip.with_audio(audio_clip)
+                base_clip = base_clip.with_duration(duration)
+                base_clip = base_clip.with_audio(audio_clip)
             else:
-                # Use default duration if no audio
-                image_clip = image_clip.with_duration(default_duration)
+                # Use native clip duration when available, otherwise fall back.
+                if not has_video or not float(base_clip.duration or 0.0) > 0.0:
+                    base_clip = base_clip.with_duration(default_duration)
 
-            clips.append(image_clip)
+            clips.append(base_clip)
 
         if not clips:
             raise ValueError("No valid scenes to assemble")
@@ -178,9 +185,12 @@ def preview_scene(
     project_dir = Path(project_dir)
 
     image_path = scene.get("image_path")
+    video_path = scene.get("video_path")
     audio_path = scene.get("audio_path")
 
-    if not image_path or not Path(image_path).exists():
+    has_video = bool(video_path and Path(video_path).exists())
+    has_image = bool(image_path and Path(image_path).exists())
+    if not has_video and not has_image:
         return None
 
     scene_id = scene.get("id", 0)
@@ -194,8 +204,10 @@ def preview_scene(
     audio_clip = None
 
     try:
-        # Create video from single scene and ensure correct dimensions
-        image_clip = ImageClip(str(image_path))
+        if has_video:
+            image_clip = VideoFileClip(str(video_path))
+        else:
+            image_clip = ImageClip(str(image_path))
         image_clip = _ensure_dimensions(image_clip, scene_id)
 
         if audio_path and Path(audio_path).exists():
@@ -203,7 +215,8 @@ def preview_scene(
             image_clip = image_clip.with_duration(audio_clip.duration)
             image_clip = image_clip.with_audio(audio_clip)
         else:
-            image_clip = image_clip.with_duration(5.0)
+            if not has_video or not float(image_clip.duration or 0.0) > 0.0:
+                image_clip = image_clip.with_duration(5.0)
 
         image_clip.write_videofile(
             str(output_path),

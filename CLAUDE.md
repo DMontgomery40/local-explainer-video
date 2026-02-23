@@ -33,7 +33,7 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 **Core modules**:
 - `core/director.py` - LLM-based storyboard generation (5-15 scenes from clinical text)
-- `core/image_gen.py` - Replicate API image generation (Qwen + Imagen 4), with style suffix auto-appended
+- `core/render.py` - Calls `qeeg-blender render` as subprocess, passes qEEGSession JSON, returns PNG path. Deterministic Blender output — no AI image generation.
 - `core/voice_gen.py` - Kokoro (local) / ElevenLabs / OpenAI TTS
 - `core/video_assembly.py` - MoviePy + ffmpeg, hard cuts only, 24fps, GPU acceleration
 
@@ -51,15 +51,12 @@ clinician portal sync folder.
 **Models**
 - Narrative judge: **Claude Opus 4.6** (Anthropic API)
 - Visual judge: **Gemini 3 Flash** via **CLIProxyAPI** (vision over rendered slide PNGs)
-- Fixes: **Qwen Image Edit** (Replicate) — surgical edits only
 
 **Non-negotiables**
 - QC must be **ELI5-liberal**: ignore imperfect analogies; be strict only on contradictions + wrong patient-data numbers.
-- For slide text issues, **never regenerate images**; use image edit on the existing PNG.
-- Only change `visual_prompt` when the prompt itself contains a wrong patient number (surgical string replace).
-- Default behavior is **check-only visual QC** (no automated image edits). When issues are found, it writes:
+- Slide text and numbers are rendered deterministically by Blender from patient data — visual QC issues are structural/layout problems only, never text fidelity. **Do not attempt image edits.** Block and alert instead.
+- Default behavior is **check-only visual QC**. When issues are found, it writes:
   - `projects/<PROJECT>/qc_visual_issues.json`
-  Enable auto-fix explicitly in the UI or with `--auto-fix-images`.
 
 **How it works**
 1. Loads qEEG Council ground truth for the patient ID (`MM-DD-YYYY-N`) from `qEEG-analysis/data/app.db`
@@ -82,72 +79,15 @@ Run it:
 - CLI (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
 - Batch: `python3.10 qc_publish_batch.py` (latest version per patient, valid patient IDs only)
 
-## Image Action Gotchas (Generate vs Edit)
+## Rendering Architecture
 
-These are intentionally different codepaths/models:
-- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → selected Replicate model (`qwen/qwen-image-2512` or `google/imagen-4`) (new image)
-- **Edit Image** → `core/image_gen.edit_image()` → DashScope `qwen-image-edit-max` (if `DASHSCOPE_API_KEY` is set) or Replicate `qwen/qwen-image-edit-2511` (fallback). Override via sidebar **Image Edit** or `IMAGE_EDIT_MODEL`.
-- **Refine Prompt** → prompt rewrite step; avoid for QC automation
+Slides are rendered deterministically by **Blender** via the `qeeg-blender` CLI (see `../qeeg-blender/`). There is no AI image generation in this pipeline.
 
-## DashScope Image Edit API (qwen-image-edit-*)
+- `core/render.py` calls `qeeg-blender render --patient <session.json> --output <slide.png>`
+- All text, electrode positions, μV values, Hz labels, and clinical notation come directly from patient data — no prompting, no hallucination risk
+- To change visual style, edit the Blender template (`qeeg-blender build-template`), not prompts
+- `BLENDER_BIN` env var overrides the `blender` binary path if not on PATH
 
-DashScope (Alibaba Model Studio) provides higher-quality image editing with additional parameters.
-
-### Models Available
-
-| Model | Quality | Outputs | Notes |
-|-------|---------|---------|-------|
-| `qwen-image-edit-max` | Highest | 1-6 | Best for production |
-| `qwen-image-edit-plus` | Mid-tier | 1-6 | Faster, lower cost |
-| `qwen-image-edit` | Base | 1 only | Single output only |
-
-### API Parameters
-
-| Parameter | Type | Range/Values | Default | Notes |
-|-----------|------|--------------|---------|-------|
-| `n` | int | 1-6 | 1 | Number of output variants (max/plus only) |
-| `size` | string | "512*512" to "2048*2048" | auto from input | Explicit output dimensions |
-| `prompt_extend` | bool | true/false | true | Let API expand prompt for better results |
-| `negative_prompt` | string | max 500 chars | " " | Things to avoid in output |
-| `watermark` | bool | true/false | false | Add watermark (disabled by default) |
-| `seed` | int | 0-2147483647 | random | For reproducible edits |
-
-### Input Capabilities
-
-- **1-3 images** per request (multi-image fusion supported)
-- Formats: JPG, JPEG, PNG, BMP, TIFF, WEBP, GIF
-- Resolution: 384-3072 pixels per dimension
-- Max file size: 10MB per image
-- Prompt max: 800 characters
-
-### Supported Edit Types
-
-1. Text editing (modify text, font, color)
-2. Object add/remove/move
-3. Subject pose changes
-4. Style transfer
-5. Background replacement
-6. Viewpoint transformation
-7. Portrait modification
-8. Old photo restoration
-
-### UI Controls (Sidebar)
-
-When a DashScope model is selected in the sidebar, additional controls appear:
-- **Variants (n)**: Slider 1-6 for generating multiple output options
-- **Seed**: Text input for reproducible edits (leave empty for random)
-- **Prompt extend**: Checkbox to let DashScope expand your prompt
-- **Negative prompt**: Text input for things to avoid
-
-### Environment Variables
-
-```bash
-DASHSCOPE_API_KEY=sk-...         # Required for DashScope models (or use ALIBABA_API_KEY)
-ALIBABA_API_KEY=sk-...           # Alternative name for DASHSCOPE_API_KEY
-DASHSCOPE_REGION=SINGAPORE       # Optional: SINGAPORE (default) or BEIJING
-DASHSCOPE_ENDPOINT=https://...   # Optional: Override endpoint URL
-IMAGE_EDIT_MODEL=qwen-image-edit-max  # Optional: Default model
-```
 
 ## Voice Configuration
 
@@ -183,8 +123,7 @@ ElevenLabs (Flash v2.5) notes:
 
 Base pipeline (`.env`):
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (director)
-- `REPLICATE_API_TOKEN` (image gen/edit)
-- `IMAGE_MODEL` (optional default image model; e.g., `qwen/qwen-image-2512` or `google/imagen-4`)
+- `BLENDER_BIN` (optional; path to blender binary if not on PATH)
 - `ELEVENLABS_API_KEY` (optional; required if selecting ElevenLabs TTS)
 
 QC + Publish (optional):

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender qEEG Runtime"
+  short_description: "Blender MCP qEEG scene routing skill"
+  default_prompt: "Produce Blender-ready qEEG scene specs with strict label/value accuracy and controlled style variation."
