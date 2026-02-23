@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from core.visual_gen import BLENDER_QEEG_MARKER, generate_scene_visual, is_blender_scene
 
 
@@ -36,7 +38,7 @@ def test_generate_scene_visual_routes_to_blender(monkeypatch) -> None:
     assert calls and calls[0][0] == "blender"
 
 
-def test_generate_scene_visual_falls_back_to_image(monkeypatch) -> None:
+def test_generate_scene_visual_routes_to_template_pack(monkeypatch) -> None:
     scene = {"id": 4, "visual_prompt": "non-blender visual"}
     project_dir = Path("/tmp/project")
     expected = project_dir / "images" / "scene_004.png"
@@ -46,13 +48,64 @@ def test_generate_scene_visual_falls_back_to_image(monkeypatch) -> None:
         calls.append(("blender", kwargs))
         return expected
 
+    def fake_template(*args, **kwargs):
+        calls.append(("template", kwargs))
+        return expected
+
     def fake_image(*args, **kwargs):
         calls.append(("image", kwargs))
         return expected
 
     monkeypatch.setattr("core.visual_gen.render_blender_scene", fake_blender)
+    monkeypatch.setattr("core.visual_gen.render_non_brain_scene", fake_template)
     monkeypatch.setattr("core.visual_gen.generate_scene_image", fake_image)
 
     out = generate_scene_visual(scene, project_dir, model="google/imagen-4")
     assert out == expected
-    assert calls and calls[0][0] == "image"
+    assert calls and calls[0][0] == "template"
+
+
+def test_generate_scene_visual_uses_ai_fallback_only_when_enabled(monkeypatch) -> None:
+    scene = {"id": 5, "visual_prompt": "non-blender visual"}
+    project_dir = Path("/tmp/project")
+    expected = project_dir / "images" / "scene_005.png"
+    calls: list[str] = []
+
+    def fake_template(*args, **kwargs):
+        calls.append("template")
+        raise RuntimeError("template failure")
+
+    def fake_image(*args, **kwargs):
+        calls.append("image")
+        return expected
+
+    monkeypatch.setattr("core.visual_gen.render_non_brain_scene", fake_template)
+    monkeypatch.setattr("core.visual_gen.generate_scene_image", fake_image)
+    monkeypatch.setenv("ALLOW_NON_BRAIN_AI_FALLBACK", "1")
+
+    out = generate_scene_visual(scene, project_dir, model="qwen/qwen-image-2512")
+    assert out == expected
+    assert calls == ["template", "image"]
+
+
+def test_generate_scene_visual_non_brain_raises_when_fallback_disabled(monkeypatch) -> None:
+    scene = {"id": 6, "visual_prompt": "non-blender visual"}
+    project_dir = Path("/tmp/project")
+    calls: list[str] = []
+
+    def fake_template(*args, **kwargs):
+        calls.append("template")
+        raise RuntimeError("template failure")
+
+    def fake_image(*args, **kwargs):
+        calls.append("image")
+        return project_dir / "images" / "scene_006.png"
+
+    monkeypatch.setattr("core.visual_gen.render_non_brain_scene", fake_template)
+    monkeypatch.setattr("core.visual_gen.generate_scene_image", fake_image)
+    monkeypatch.delenv("ALLOW_NON_BRAIN_AI_FALLBACK", raising=False)
+
+    with pytest.raises(RuntimeError, match="template failure"):
+        generate_scene_visual(scene, project_dir, model="qwen/qwen-image-2512")
+
+    assert calls == ["template"]

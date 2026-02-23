@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import time
 from typing import Any, Callable, Mapping, Sequence
 
@@ -57,7 +58,11 @@ class BlenderRenderConfig:
         env_bin = str(os.getenv("BLENDER_BIN") or "").strip()
         found = env_bin or shutil.which("blender") or None
         samples = int(os.getenv("BLENDER_SAMPLES", "64"))
-        gpu = str(os.getenv("BLENDER_GPU", "")).strip().lower() in {"1", "true", "yes", "on"}
+        raw_gpu = os.getenv("BLENDER_GPU")
+        if raw_gpu is None or str(raw_gpu).strip() == "":
+            gpu = sys.platform == "darwin"
+        else:
+            gpu = str(raw_gpu).strip().lower() in {"1", "true", "yes", "on"}
         cache = str(os.getenv("BLENDER_CACHE", "1")).strip().lower() not in {"0", "false", "no", "off"}
         return cls(
             blender_bin=found,
@@ -319,17 +324,24 @@ def _build_scene_spec(
     value_map = blender_cfg_map.get("value_map")
     coherence_map = blender_cfg_map.get("coherence_map")
     animation_map = blender_cfg_map.get("animation") or scene.get("animation")
+    style_map = blender_cfg_map.get("style")
     if not isinstance(value_map, Mapping):
         value_map = {"type": "zscore", "clip": 2.5}
     if not isinstance(coherence_map, Mapping):
         coherence_map = {"type": "magnitude", "min": 0.0, "max": 1.0}
     animation_cfg = _coerce_animation_cfg(animation_map)
+    style_cfg = _coerce_style_cfg(style_map, scene=scene)
+    extract_cfg = _coerce_extract_cfg(extraction_cfg)
 
     return {
+        "contract_version": "brain_basemodel_v1",
         "scene_id": scene_id,
+        "scene_uid": str(scene.get("uid") or ""),
         "title": title,
         "subtitle": subtitle,
         "footer": footer,
+        "extract": extract_cfg,
+        "style": style_cfg,
         "electrode_values": {k: electrode_values[k] for k in sorted(electrode_values)},
         "coherence_edges": _sorted_edges(coherence_edges),
         "value_map": dict(value_map),
@@ -483,6 +495,62 @@ def _coerce_animation_cfg(raw: Any) -> dict[str, Any]:
         "pulse_hz": pulse_hz,
         "pulse_depth": pulse_depth,
     }
+
+
+def _coerce_style_cfg(raw: Any, *, scene: Mapping[str, Any]) -> dict[str, str]:
+    style = raw if isinstance(raw, Mapping) else {}
+    lighting_preset = str(
+        style.get("lighting_preset")
+        or style.get("preset")
+        or scene.get("style_preset")
+        or "clinical_glow"
+    ).strip().lower()
+    camera_preset = str(
+        style.get("camera_preset")
+        or scene.get("camera_preset")
+        or "three_quarter_left"
+    ).strip().lower()
+    palette = str(style.get("palette") or "teal-amber").strip().lower()
+    allowed_lighting = {"clinical_glow", "calm_precision", "focus_contrast"}
+    allowed_camera = {
+        "three_quarter_left",
+        "three_quarter_right",
+        "frontal",
+        "top_center",
+    }
+    if lighting_preset not in allowed_lighting:
+        lighting_preset = "clinical_glow"
+    if camera_preset not in allowed_camera:
+        camera_preset = "three_quarter_left"
+    if not palette:
+        palette = "teal-amber"
+    return {
+        "lighting_preset": lighting_preset,
+        "camera_preset": camera_preset,
+        "palette": palette,
+    }
+
+
+def _coerce_extract_cfg(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, Mapping):
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("session_index", "band", "metric", "electrode_path", "coherence_path"):
+        if key not in raw:
+            continue
+        value = raw.get(key)
+        if value is None:
+            continue
+        if key == "session_index":
+            try:
+                out[key] = int(value)
+            except Exception:
+                continue
+        else:
+            text = str(value).strip()
+            if text:
+                out[key] = text
+    return out
 
 
 def _float_or(raw: Any, default: float, *, minimum: float | None = None) -> float:

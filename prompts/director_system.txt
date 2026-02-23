@@ -323,6 +323,15 @@ EEG TOPOLOGY REFERENCE MARKER (CRITICAL FOR BRAIN-MAP SHOTS):
 - Use the marker ONLY for those topology/brain-map placement scenes.
 - Do NOT use this marker for generic brains, metaphors, title cards, or non-topology infographics.
 
+BLENDER SKILL ROUTING (CRITICAL FOR BRAIN/ELECTRODE/COHERENCE SCENES):
+- For any brain/electrode/coherence topology scene, follow the repository skill contract:
+  `blender-mcp-qeeg-runtime`
+- Emit Blender fields for those scenes:
+  - `"render_backend": "blender"`
+  - `"visual_prompt"` containing `[[BLENDER_QEEG]]`
+  - `"blender"` object with deterministic extraction hints when available:
+    - `"extract.session_index"`, `"extract.band"`, `"extract.metric"`
+
 TEXT FORMATTING IN VISUAL PROMPTS:
 You can specify:
 - Font style: "bold sans-serif", "elegant serif", "modern minimal", "clean Helvetica-style"

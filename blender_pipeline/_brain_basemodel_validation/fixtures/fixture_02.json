@@ -1,0 +1,73 @@
+{
+  "animation": {
+    "enabled": false
+  },
+  "coherence_edges": [
+    {
+      "a": "C3",
+      "b": "Cz",
+      "value": 0.86
+    },
+    {
+      "a": "Cz",
+      "b": "C4",
+      "value": 0.89
+    },
+    {
+      "a": "C3",
+      "b": "P3",
+      "value": 0.78
+    },
+    {
+      "a": "P3",
+      "b": "Pz",
+      "value": 0.84
+    },
+    {
+      "a": "Pz",
+      "b": "P4",
+      "value": 0.82
+    },
+    {
+      "a": "C4",
+      "b": "P4",
+      "value": 0.8
+    }
+  ],
+  "coherence_map": {
+    "max": 1.0,
+    "min": 0.0,
+    "type": "magnitude"
+  },
+  "contract_version": "brain_basemodel_v1",
+  "electrode_values": {
+    "C3": 1.8,
+    "C4": 1.9,
+    "Cz": 2.2,
+    "F3": 0.8,
+    "F4": 0.7,
+    "O1": -0.3,
+    "O2": -0.4,
+    "P3": 1.5,
+    "P4": 1.7,
+    "Pz": 1.6
+  },
+  "extract": {
+    "band": "beta",
+    "metric": "coherence",
+    "session_index": 2
+  },
+  "footer": "Validation fixture: clinical_glow",
+  "scene_id": 102,
+  "style": {
+    "camera_preset": "frontal",
+    "lighting_preset": "clinical_glow",
+    "palette": "teal-amber"
+  },
+  "subtitle": "Central-parietal network strengthening",
+  "title": "Fixture 2 - Central Coherence Surge",
+  "value_map": {
+    "clip": 2.5,
+    "type": "zscore"
+  }
+}

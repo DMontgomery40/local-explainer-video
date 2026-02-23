@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "template_version": "brain_basemodel_v1",
+  "counts": {
+    "anchors": 21,
+    "electrodes": 21,
+    "labels": 21
+  },
+  "missing": {
+    "collections": [],
+    "objects": [],
+    "materials": [],
+    "material_channels": []
+  },
+  "errors": []
+}

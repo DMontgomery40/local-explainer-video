@@ -31,6 +31,12 @@ Use these recipes to vary style without affecting clinical correctness.
 - Don’t place bright fog layers between camera and labels.
 - Don’t saturate so hard that red/green value distinctions collapse.
 
+## Allowed Camera Presets (runtime contract)
+- `three_quarter_left` (default)
+- `three_quarter_right`
+- `frontal`
+- `top_center`
+
 ## Community References
 - Blender MCP discussion board: <https://github.com/ahujasid/blender-mcp/discussions>
 - Blender Artists 3D-agent thread (tooling and practical quality focus): <https://blenderartists.org/t/3d-agent-for-blender-mcp-llm-powered-3d-model-generation-with-clean-topology/1577821>

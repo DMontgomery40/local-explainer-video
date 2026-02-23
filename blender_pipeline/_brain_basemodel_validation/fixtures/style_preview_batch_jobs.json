@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "out": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_clinical_glow.png",
+      "scene_id": 101,
+      "spec": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_clinical_glow.json",
+      "video_out": ""
+    },
+    {
+      "out": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_calm_precision.png",
+      "scene_id": 102,
+      "spec": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_calm_precision.json",
+      "video_out": ""
+    },
+    {
+      "out": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_focus_contrast.png",
+      "scene_id": 103,
+      "spec": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_focus_contrast.json",
+      "video_out": ""
+    }
+  ],
+  "render_settings": {
+    "height": 928,
+    "samples": 8,
+    "width": 1664
+  },
+  "template": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/assets/qeeg_template.blend"
+}

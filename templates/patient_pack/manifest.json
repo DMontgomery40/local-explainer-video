@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "template_id": "general_panel__09-05-1954-0__integration_gate_20260222_074017_scene_001",
+      "archetype": "general_panel",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/general_panel/09-05-1954-0__integration_gate_20260222_074017_scene_001.png",
+      "source_project": "09-05-1954-0__integration_gate_20260222_074017",
+      "source_scene_id": 1
+    },
+    {
+      "template_id": "metric_dashboard__09-05-1954-0__integration_gate_20260222_072905_scene_003",
+      "archetype": "metric_dashboard",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/metric_dashboard/09-05-1954-0__integration_gate_20260222_072905_scene_003.png",
+      "source_project": "09-05-1954-0__integration_gate_20260222_072905",
+      "source_scene_id": 3
+    },
+    {
+      "template_id": "network_panel__07-14-2008-0_scene_012",
+      "archetype": "network_panel",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/network_panel/07-14-2008-0_scene_012.png",
+      "source_project": "07-14-2008-0",
+      "source_scene_id": 12
+    },
+    {
+      "template_id": "split_compare__01-01-1983-0_scene_012",
+      "archetype": "split_compare",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/split_compare/01-01-1983-0_scene_012.png",
+      "source_project": "01-01-1983-0",
+      "source_scene_id": 12
+    },
+    {
+      "template_id": "timeline_panel__01-01-1983-0_scene_000",
+      "archetype": "timeline_panel",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/timeline_panel/01-01-1983-0_scene_000.png",
+      "source_project": "01-01-1983-0",
+      "source_scene_id": 0
+    },
+    {
+      "template_id": "trend_panel__09-05-1954-0__integration_gate_20260222_074017_scene_011",
+      "archetype": "trend_panel",
+      "path": "/Users/davidmontgomery/local-explainer-video/templates/patient_pack/trend_panel/09-05-1954-0__integration_gate_20260222_074017_scene_011.png",
+      "source_project": "09-05-1954-0__integration_gate_20260222_074017",
+      "source_scene_id": 11
+    }
+  ]
+}

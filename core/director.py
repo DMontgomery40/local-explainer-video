@@ -57,21 +57,8 @@ def load_prompt(name: str) -> str:
 
 
 def _build_director_system_prompt() -> str:
-    """
-    Build the director system prompt, optionally appending Blender-scene skill guidance.
-
-    The base prompt still works on its own; the Blender skill file can be added/iterated
-    without changing Python code.
-    """
-    base = load_prompt("director_system").rstrip()
-    skill_name = "director_blender_skill"
-    skill_path = Path(__file__).parent.parent / "prompts" / f"{skill_name}.txt"
-    if not skill_path.exists():
-        return base
-    skill = load_prompt(skill_name).strip()
-    if not skill:
-        return base
-    return f"{base}\n\n{skill}"
+    """Build the director system prompt from the canonical system prompt file."""
+    return load_prompt("director_system").rstrip()
 
 
 def generate_storyboard(
@@ -267,6 +254,10 @@ def _validate_scenes(scenes: list[dict]) -> list[dict]:
 
         if _looks_like_blender_scene(normalized):
             normalized["render_backend"] = "blender"
+        else:
+            backend = str(normalized.get("render_backend") or "").strip().lower()
+            if not backend:
+                normalized["render_backend"] = "template_pack"
 
         validated.append(normalized)
     return validated

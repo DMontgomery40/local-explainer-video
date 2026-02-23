@@ -1,0 +1,54 @@
+{
+  "artifacts": {
+    "checkpoints_dir": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/checkpoints",
+    "contract_report": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/reports/template_contract_report.json",
+    "fixture_batch": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/fixture_batch_jobs.json",
+    "fixtures_contact_sheet": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/comps/fixtures_contact_sheet.png",
+    "style_batch": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_batch_jobs.json",
+    "style_presets_contact_sheet": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/comps/style_presets_contact_sheet.png"
+  },
+  "fixture_specs": [
+    {
+      "name": "fixture_01",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/fixture_01.png",
+      "scene_id": 101,
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/fixture_01.json",
+      "title": "Fixture 1 - Left Dominant Alpha Power"
+    },
+    {
+      "name": "fixture_02",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/fixture_02.png",
+      "scene_id": 102,
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/fixture_02.json",
+      "title": "Fixture 2 - Central Coherence Surge"
+    },
+    {
+      "name": "fixture_03",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/fixture_03.png",
+      "scene_id": 103,
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/fixture_03.json",
+      "title": "Fixture 3 - Posterior Reorganization"
+    }
+  ],
+  "missing_checkpoints": [],
+  "ok": true,
+  "render_mode": "gpu",
+  "style_previews": [
+    {
+      "preset": "clinical_glow",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_clinical_glow.png",
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_clinical_glow.json"
+    },
+    {
+      "preset": "calm_precision",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_calm_precision.png",
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_calm_precision.json"
+    },
+    {
+      "preset": "focus_contrast",
+      "render_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/renders/style_preview_focus_contrast.png",
+      "spec_path": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/_brain_basemodel_validation/fixtures/style_preview_focus_contrast.json"
+    }
+  ],
+  "template": "/Users/davidmontgomery/local-explainer-video/blender_pipeline/assets/qeeg_template.blend"
+}

@@ -39,6 +39,20 @@ def test_validate_scenes_auto_tags_blender_for_eeg_label_prompt() -> None:
     assert out[0]["render_backend"] == "blender"
 
 
-def test_director_system_prompt_appends_blender_skill_file() -> None:
+def test_validate_scenes_defaults_non_brain_to_template_pack() -> None:
+    scenes = [
+        {
+            "id": 2,
+            "title": "Roadmap",
+            "narration": "We will walk through the next five steps.",
+            "visual_prompt": "A clean roadmap panel with milestones and timeline markers",
+        }
+    ]
+    out = _validate_scenes(scenes)
+    assert out[0]["render_backend"] == "template_pack"
+
+
+def test_director_system_prompt_contains_blender_skill_routing_block() -> None:
     prompt = _build_director_system_prompt()
-    assert "BLENDER SCENE SKILL" in prompt
+    assert "blender-mcp-qeeg-runtime" in prompt
+    assert '"render_backend": "blender"' in prompt

@@ -1,0 +1,72 @@
+{
+  "animation": {
+    "enabled": false
+  },
+  "coherence_edges": [
+    {
+      "a": "O1",
+      "b": "P3",
+      "value": 0.86
+    },
+    {
+      "a": "P3",
+      "b": "Pz",
+      "value": 0.82
+    },
+    {
+      "a": "Pz",
+      "b": "P4",
+      "value": 0.84
+    },
+    {
+      "a": "P4",
+      "b": "O2",
+      "value": 0.87
+    },
+    {
+      "a": "P3",
+      "b": "P4",
+      "value": 0.78
+    },
+    {
+      "a": "F3",
+      "b": "F4",
+      "value": 0.24
+    }
+  ],
+  "coherence_map": {
+    "max": 1.0,
+    "min": 0.0,
+    "type": "magnitude"
+  },
+  "contract_version": "brain_basemodel_v1",
+  "electrode_values": {
+    "Cz": 0.4,
+    "F3": -1.1,
+    "F4": -1.2,
+    "Fz": -0.8,
+    "O1": 2.4,
+    "O2": 2.2,
+    "P3": 1.8,
+    "P4": 1.9,
+    "Pz": 1.6
+  },
+  "extract": {
+    "band": "theta",
+    "metric": "coherence",
+    "session_index": 3
+  },
+  "footer": "Validation fixture: clinical_glow",
+  "scene_id": 103,
+  "style": {
+    "camera_preset": "three_quarter_right",
+    "lighting_preset": "clinical_glow",
+    "palette": "teal-amber"
+  },
+  "subtitle": "Posterior coherence with reduced frontal load",
+  "title": "Fixture 3 - Posterior Reorganization",
+  "value_map": {
+    "clip": 2.5,
+    "type": "zscore"
+  }
+}

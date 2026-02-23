@@ -52,6 +52,11 @@ Emit these fields on each Blender scene:
 }
 ```
 
+Allowed style values:
+- `lighting_preset`: `clinical_glow|calm_precision|focus_contrast`
+- `camera_preset`: `three_quarter_left|three_quarter_right|frontal|top_center`
+- `palette`: `teal-amber|ice-white|cyan-orange`
+
 ## Style Freedom
 Allow variation only in style dimensions that do not alter correctness:
 - Camera framing/angle/orbit

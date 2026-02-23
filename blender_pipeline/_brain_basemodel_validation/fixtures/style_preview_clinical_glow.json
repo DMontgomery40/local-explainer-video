@@ -1,0 +1,57 @@
+{
+  "animation": {
+    "enabled": false
+  },
+  "coherence_edges": [
+    {
+      "a": "F3",
+      "b": "C3",
+      "value": 0.42
+    },
+    {
+      "a": "C3",
+      "b": "P3",
+      "value": 0.38
+    },
+    {
+      "a": "F4",
+      "b": "C4",
+      "value": 0.18
+    }
+  ],
+  "coherence_map": {
+    "max": 1.0,
+    "min": 0.0,
+    "type": "magnitude"
+  },
+  "contract_version": "brain_basemodel_v1",
+  "electrode_values": {
+    "C3": 2.8,
+    "C4": -1.7,
+    "Cz": 0.7,
+    "F3": 2.2,
+    "F4": -1.4,
+    "Fz": 0.5,
+    "P3": 2.5,
+    "P4": -1.2,
+    "Pz": 0.3
+  },
+  "extract": {
+    "band": "alpha",
+    "metric": "power",
+    "session_index": 1
+  },
+  "footer": "Validation fixture: clinical_glow",
+  "scene_id": 101,
+  "style": {
+    "camera_preset": "three_quarter_left",
+    "lighting_preset": "clinical_glow",
+    "palette": "teal-amber"
+  },
+  "subtitle": "Deterministic electrode value mapping",
+  "title": "Style Preview - clinical_glow",
+  "value_map": {
+    "clip": 2.5,
+    "type": "zscore"
+  }
+}
