@@ -193,21 +193,36 @@ def _configure_render(scene: bpy.types.Scene, *, width: int, height: int, sample
     scene.render.resolution_y = int(height)
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
+    try:
+        scene.render.use_persistent_data = True
+    except Exception:
+        pass
     scene.cycles.samples = int(samples)
     scene.cycles.use_adaptive_sampling = True
+    _set_numeric_if_present(scene.cycles, "adaptive_threshold", 0.01)
+    _set_numeric_if_present(scene.cycles, "max_bounces", 6)
+    _set_numeric_if_present(scene.cycles, "diffuse_bounces", 4)
+    _set_numeric_if_present(scene.cycles, "glossy_bounces", 4)
+    _set_numeric_if_present(scene.cycles, "transmission_bounces", 6)
+    _set_numeric_if_present(scene.cycles, "transparent_max_bounces", 6)
+    _set_numeric_if_present(scene.cycles, "volume_bounces", 0)
+    _set_bool_if_present(scene.cycles, "caustics_reflective", False)
+    _set_bool_if_present(scene.cycles, "caustics_refractive", False)
+    _set_bool_if_present(scene.cycles, "use_light_tree", True)
     scene.cycles.device = "GPU" if gpu else "CPU"
-    try:
-        scene.cycles.use_denoising = True
-    except Exception:
-        pass
-    try:
-        scene.cycles.denoiser = "OPENIMAGEDENOISE"
-    except Exception:
-        pass
-    try:
-        scene.cycles.use_gpu_denoising = bool(gpu)
-    except Exception:
-        pass
+    _set_bool_if_present(scene.cycles, "use_denoising", True)
+    _set_bool_if_present(scene.cycles, "use_preview_denoising", True)
+    _set_preferred_enum(scene.cycles, "denoiser", ("OPENIMAGEDENOISE", "OPTIX", "NLM"))
+    _set_preferred_enum(scene.cycles, "preview_denoiser", ("OPENIMAGEDENOISE", "OPTIX", "NLM"))
+    _set_preferred_enum(scene.cycles, "denoising_quality", ("BALANCED", "HIGH", "FAST"))
+    _set_preferred_enum(scene.cycles, "preview_denoising_quality", ("BALANCED", "HIGH", "FAST"))
+    _set_preferred_enum(scene.cycles, "denoising_prefilter", ("FAST", "ACCURATE", "NONE"))
+    _set_preferred_enum(scene.cycles, "preview_denoising_prefilter", ("FAST", "ACCURATE", "NONE"))
+    _set_preferred_enum(scene.cycles, "denoising_input_passes", ("RGB_ALBEDO", "RGB_ALBEDO_NORMAL", "RGB"))
+    _set_preferred_enum(scene.cycles, "preview_denoising_input_passes", ("RGB_ALBEDO", "RGB_ALBEDO_NORMAL", "RGB"))
+    _set_bool_if_present(scene.cycles, "denoising_use_gpu", bool(gpu))
+    _set_bool_if_present(scene.cycles, "preview_denoising_use_gpu", bool(gpu))
+    _set_bool_if_present(scene.cycles, "use_gpu_denoising", bool(gpu))
     if gpu:
         try:
             prefs = bpy.context.preferences.addons["cycles"].preferences
@@ -215,23 +230,9 @@ def _configure_render(scene: bpy.types.Scene, *, width: int, height: int, sample
                 prefs.get_devices()
             except Exception:
                 pass
-            compute_types = _enum_identifiers(prefs, "compute_device_type")
-            preferred = ("METAL", "OPTIX", "CUDA", "HIP", "ONEAPI", "NONE")
-            if compute_types:
-                for dtype in preferred:
-                    if dtype in compute_types:
-                        try:
-                            prefs.compute_device_type = dtype
-                            break
-                        except Exception:
-                            continue
-            else:
-                for dtype in preferred:
-                    try:
-                        prefs.compute_device_type = dtype
-                        break
-                    except Exception:
-                        continue
+            _set_preferred_enum(prefs, "compute_device_type", ("METAL", "OPTIX", "CUDA", "HIP", "ONEAPI", "NONE"))
+            _set_preferred_enum(prefs, "metalrt", ("ON", "AUTO", "OFF"))
+            _set_preferred_enum(prefs, "kernel_optimization_level", ("FULL", "INTERSECT", "OFF"))
             for device in getattr(prefs, "devices", []):
                 try:
                     dev_type = str(getattr(device, "type", "")).upper()
@@ -256,6 +257,34 @@ def _enum_identifiers(obj: bpy.types.ID, prop_name: str) -> set[str]:
         return {str(item.identifier) for item in prop.enum_items}
     except Exception:
         return set()
+
+
+def _set_bool_if_present(obj: bpy.types.ID, prop_name: str, value: bool) -> None:
+    try:
+        if hasattr(obj, prop_name):
+            setattr(obj, prop_name, bool(value))
+    except Exception:
+        pass
+
+
+def _set_numeric_if_present(obj: bpy.types.ID, prop_name: str, value: float) -> None:
+    try:
+        if hasattr(obj, prop_name):
+            setattr(obj, prop_name, value)
+    except Exception:
+        pass
+
+
+def _set_preferred_enum(obj: bpy.types.ID, prop_name: str, preferred: tuple[str, ...]) -> None:
+    options = _enum_identifiers(obj, prop_name)
+    for candidate in preferred:
+        if options and candidate not in options:
+            continue
+        try:
+            setattr(obj, prop_name, candidate)
+            return
+        except Exception:
+            continue
 
 
 def _configure_still_output(scene: bpy.types.Scene, out_path: Path) -> None:

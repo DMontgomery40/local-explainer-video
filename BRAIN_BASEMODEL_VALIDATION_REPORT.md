@@ -1,5 +1,8 @@
 # BRAIN_BASEMODEL_VALIDATION_REPORT
 
+## Template Version
+`brain_basemodel_v2` — MRI-derived pial cortical surface (brainder.org)
+
 ## Validation Run
 Command:
 ```bash
@@ -51,24 +54,49 @@ Contact sheets:
 1. Base `.blend` deterministic + reusable:
 - Pass (template generated reproducibly from `build_template.py`, validated via contract script).
 
-2. Three fixture scene specs with data-driven differences:
+2. Brain anatomy anatomically recognizable:
+- Pass (real MRI pial surface shows clear gyri/sulci, hemisphere separation, and natural cortical folds).
+
+3. Electrodes placed on brain surface:
+- Pass (BVH raycasting places electrodes directly on the cortical surface with normal-offset positioning).
+
+4. Three fixture scene specs with data-driven differences:
 - Pass (fixture 1/2/3 render distinct electrode/coherence patterns).
 
-3. Electrode labels exact and legible:
+5. Electrode labels exact and legible:
 - Pass (canonical labels are deterministic objects; active data-bound labels are rendered prominently).
 
-4. Coherence lines visible and non-chaotic:
+6. Coherence lines visible and non-chaotic:
 - Pass for fixture set (lines render with bounded width and deterministic arcs).
 
-5. No platform logic outside macOS added:
+7. No platform logic outside macOS added:
 - Pass (changes are macOS GPU defaults and generic Blender-safe runtime introspection only).
 
-6. Tests/checks pass and artifacts written:
+8. Tests/checks pass and artifacts written:
 - Pass.
 - Unit tests run:
   - `python3.10 -m pytest -q tests/unit/test_blender_scene_spec_contract.py tests/unit/test_director_blender_fields.py tests/unit/test_visual_gen_backend_selection.py`
   - Result: `13 passed`
 
+## Visual Parity Assessment (v2 vs v1)
+
+### What improved
+- Brain form is now anatomically recognizable with real gyri/sulci (was: lumpy UV sphere with random displacement)
+- Electrodes sit on the cortical surface (was: floating on a separate perfect sphere at r=2.22)
+- Hemisphere separation is natural from the MRI mesh (was: boolean cut with a thin cube)
+- Surface detail reads as organic cortical tissue (was: synthetic noise texture)
+
+### Remaining gaps vs AI-generated reference targets
+- Material color/glow could be further tuned for closer match to the warm gold + cool blue aesthetic in Qwen-generated references
+- Electrode markers could use stronger color differentiation when data-bound (active vs inactive)
+- The SSS translucency effect is subtle; reference images show more dramatic subsurface glow
+- Camera framing and composition differences are style-preset level (adjustable without code changes)
+
+### Verdict
+The v2 brain is at credible anatomical parity. The form reads as a real brain. Further visual refinement is now in the domain of material/lighting tuning rather than fundamental geometry problems.
+
 ## Notes
-- Validation harness intentionally uses lower samples for speed (`--samples 8`) while preserving deterministic scene contract checks.
+- Validation harness uses lower samples for speed (`--samples 8`) while preserving deterministic scene contract checks.
 - Production renders can increase quality by raising `BLENDER_SAMPLES`.
+- Brain mesh post-processing: Decimate (0.35 ratio) + Smooth (8 iter, 0.5 factor) + SubSurf (render=1).
+- Mesh source: brainder.org MNI152 pial surfaces, CC-BY-SA 3.0.

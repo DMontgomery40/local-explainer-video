@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "template_version": "brain_basemodel_v1",
+  "template_version": "brain_basemodel_v2",
   "counts": {
     "anchors": 21,
     "electrodes": 21,

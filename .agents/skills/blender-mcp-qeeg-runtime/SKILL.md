@@ -8,6 +8,42 @@ description: Route qEEG brain/electrode/coherence scenes to Blender MCP with det
 ## Overview
 Use this skill to produce Blender-ready scene objects for brain visuals while keeping clinical data deterministic and exact.
 
+## Prerequisites: Blender MCP Connection
+
+Before issuing any Blender MCP tool calls, ensure the addon socket server is running inside Blender. Use the `macos-automator` MCP server (AppleScript/accessibility) to automate this -- do NOT use Playwright (Blender is a native app, not a browser).
+
+### Auto-connect sequence (via macos-automator)
+1. **Check if Blender is running.** Use AppleScript:
+   ```applescript
+   tell application "System Events" to (name of processes) contains "Blender"
+   ```
+2. **If not running, launch it** (non-headless -- must be visible on screen):
+   ```applescript
+   tell application "Blender" to activate
+   ```
+   Wait 5-8 seconds for full startup.
+3. **Open the BlenderMCP sidebar panel and click "Connect to MCP server".**
+   Use `accessibility_action` to find the BlenderMCP panel button. The addon registers a sidebar tab called "BlenderMCP" (accessed via N key in the 3D Viewport). The connect button's label is "Connect to MCP server" (`BLENDERMCP_OT_StartServer`).
+   ```applescript
+   tell application "System Events"
+     tell process "Blender"
+       -- Press N to toggle sidebar if not visible
+       keystroke "n"
+       delay 0.5
+       -- Navigate to BlenderMCP tab and click Connect
+       -- Use accessibility_action to find button by title "Connect to MCP server"
+     end tell
+   end tell
+   ```
+   Alternatively, use the `accessibility_action` tool directly to locate and click the button by its accessibility label.
+4. **Verify connection.** After clicking connect, call `get_scene_info` via the blender MCP server. If it returns scene data, the socket bridge on port 9876 is live. If it errors, retry the connect step.
+
+### Important notes
+- The addon listens on `localhost:9876` by default.
+- Blender MUST be visible on screen (not minimized) for accessibility actions to work.
+- macOS Accessibility permissions must be granted to the terminal/app running the agent (System Settings > Privacy & Security > Accessibility).
+- If Blender was already running with the addon connected, skip straight to the `get_scene_info` verification.
+
 ## Routing Rules
 - Use for scenes that visualize a brain surface, EEG electrodes, band activity topography, or coherence connections.
 - Do not use for non-brain chart/panel scenes (bars, timelines, split comparisons, KPI cards). Those stay in template-pack rendering.
@@ -18,6 +54,7 @@ Use this skill to produce Blender-ready scene objects for brain visuals while ke
 - Keep patient numeric values exact; never invent or “smooth” values.
 - Keep on-slide text exact and short (title/subtitle/footer only in Blender scene text fields).
 - Keep extraction hints explicit when available (`session_index`, `band`, `metric`) so data binding is stable.
+- For Blender API params/enums/commands, verify against Context7 first, then confirm against runtime `bl_rna` enum/property availability in the active Blender version before coding.
 
 ## Output Contract
 Emit these fields on each Blender scene:

@@ -91,6 +91,10 @@ def ensure_template_exists(config: BlenderRenderConfig | None = None) -> Path:
     if not font_path.exists():
         raise FileNotFoundError(f"Missing bundled font file: {font_path}")
 
+    mesh_dir = _pipeline_dir() / "assets" / "brain_mesh"
+    if not (mesh_dir / "lh.pial.obj").exists() or not (mesh_dir / "rh.pial.obj").exists():
+        raise FileNotFoundError(f"Missing brain mesh OBJ files in: {mesh_dir}")
+
     template_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         blender_bin,
@@ -105,6 +109,8 @@ def ensure_template_exists(config: BlenderRenderConfig | None = None) -> Path:
         str(montage_path),
         "--font",
         str(font_path),
+        "--mesh-dir",
+        str(mesh_dir),
         "--width",
         str(TARGET_WIDTH),
         "--height",

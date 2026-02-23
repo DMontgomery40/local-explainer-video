@@ -52,3 +52,4 @@ Allowed to vary:
 - Never emit text that restates a value not present in source data.
 - Keep Blender text blocks concise to avoid clipping.
 - Avoid visual designs where coherence lines overlap labels at center frame.
+- For Blender API tuning changes, gate updates through Context7 + runtime `bl_rna` checks to avoid stale enum/property assumptions across Blender versions.
