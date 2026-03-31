@@ -26,6 +26,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.agents/
 
 # Virtual environments
 venv/
@@ -47,3 +48,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Experiments
+experiments/

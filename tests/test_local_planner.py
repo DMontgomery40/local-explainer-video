@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import pytest
+
+from core.local_planner import (
+    DEFAULT_CLAUDE_BINARY,
+    build_cathode_resource_map,
+    build_claude_command,
+    build_codex_command,
+    build_storyboard_prompt,
+    normalize_storyboard_runner,
+    validate_cathode_ready_scenes,
+)
+
+
+def test_normalize_storyboard_runner_maps_legacy_provider_names():
+    assert normalize_storyboard_runner("openai") == "codex"
+    assert normalize_storyboard_runner("anthropic") == "claude"
+    assert normalize_storyboard_runner("codex") == "codex"
+    assert normalize_storyboard_runner("claude") == "claude"
+
+
+def test_build_codex_command_uses_exec_and_explicit_cathode_access(tmp_path):
+    resource_map = build_cathode_resource_map()
+    schema_path = tmp_path / "schema.json"
+    output_path = tmp_path / "last.json"
+
+    command = build_codex_command(schema_path, output_path, resource_map.cathode_root)
+
+    assert command[:6] == ["codex", "--search", "-a", "never", "-s", "read-only"]
+    assert "exec" in command
+    assert "-C" in command
+    assert str(resource_map.cathode_root) in command
+    assert str(schema_path) in command
+    assert str(output_path) in command
+
+
+def test_build_claude_command_uses_explicit_binary_and_json_schema():
+    resource_map = build_cathode_resource_map()
+    command = build_claude_command('{"type":"object"}', resource_map.cathode_root)
+
+    assert command[0] == str(DEFAULT_CLAUDE_BINARY)
+    assert "-p" in command
+    assert "--output-format" in command
+    assert "json" in command
+    assert "--json-schema" in command
+    assert "--add-dir" in command
+    assert str(resource_map.cathode_root) in command
+    assert "--no-session-persistence" in command
+
+
+def test_build_storyboard_prompt_includes_real_cathode_paths_and_art_first_note():
+    prompt = build_storyboard_prompt("Patient data here", "SYSTEM")
+
+    assert "/Users/davidmontgomery/cathode/template_deck/text_zones.json" in prompt
+    assert "/Users/davidmontgomery/cathode/frontend/src/remotion/templateLayoutMap.ts" in prompt
+    assert "/Users/davidmontgomery/.codex/skills/remotion/SKILL.md" in prompt
+    assert "art-first" in prompt
+    assert '"scenes"' in prompt
+
+
+def test_validate_cathode_ready_scenes_accepts_motion_template_scene():
+    scenes = validate_cathode_ready_scenes(
+        {
+            "scenes": [
+                {
+                    "title": "Signal Timing",
+                    "narration": "The timing stayed inside the target range across all three sessions.",
+                    "scene_type": "motion",
+                    "visual_prompt": None,
+                    "on_screen_text": ["P300 Signal Timing", "Within Range"],
+                    "composition": {
+                        "family": "metric_improvement",
+                        "mode": "native",
+                        "props": {
+                            "background_id": "metric_improvement",
+                            "headline": "P300 Signal Timing",
+                            "metric_name": "P300 Timing",
+                            "stages": [
+                                {"value": "276 ms", "label": "Session 1"},
+                                {"value": "308 ms", "label": "Session 2"},
+                                {"value": "320 ms", "label": "Session 3"},
+                            ],
+                            "delta": "Always inside target",
+                            "direction": "stable",
+                        },
+                    },
+                }
+            ]
+        }
+    )
+
+    scene = scenes[0]
+    assert scene["scene_type"] == "motion"
+    assert scene["visual_prompt"] == ""
+    assert scene["motion"]["template_id"] == "metric_improvement"
+    assert scene["composition"]["manifestation"] == "native_remotion"
+    assert scene["composition"]["props"]["background_id"] == "metric_improvement"
+
+
+def test_validate_cathode_ready_scenes_rejects_unknown_background_id():
+    with pytest.raises(ValueError, match="unknown Cathode background_id"):
+        validate_cathode_ready_scenes(
+            {
+                "scenes": [
+                    {
+                        "title": "Bad Background",
+                        "narration": "Narration is present.",
+                        "scene_type": "motion",
+                        "visual_prompt": None,
+                        "on_screen_text": [],
+                        "composition": {
+                            "family": "metric_improvement",
+                            "mode": "native",
+                            "props": {
+                                "background_id": "not_a_real_background",
+                                "headline": "Oops",
+                            },
+                        },
+                    }
+                ]
+            }
+        )

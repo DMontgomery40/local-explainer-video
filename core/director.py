@@ -1,301 +1,242 @@
-"""LLM-based storyboard generation for qEEG explainer videos."""
+"""Storyboard generation for qEEG explainer videos.
+
+Supports two paths:
+  1. Local agent runners (codex/claude CLI) via local_planner — the original path.
+  2. Direct Anthropic API calls with composition-based output — the Remotion path.
+"""
+
+from __future__ import annotations
 
 import json
-import uuid
+import os
+import sys
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-import anthropic
-import openai
-
-# Singleton LLM clients
-_openai_client = None
-_anthropic_client = None
-
-
-def _get_openai_client():
-    """Get or create singleton OpenAI client."""
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = openai.OpenAI()
-    return _openai_client
-
-
-def _get_anthropic_client():
-    """Get or create singleton Anthropic client."""
-    global _anthropic_client
-    if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic()
-    return _anthropic_client
-
-
-# Cached prompts
 _PROMPTS: dict[str, str] = {}
+
+StoryboardProvider = Literal["codex", "claude", "openai", "anthropic", "api"]
+
+
+def _resolve_prompt_path(name: str) -> Path:
+    """Resolve prompt path, supporting versioned director_system experiments."""
+    prompts_dir = Path(__file__).parent.parent / "prompts"
+
+    if name == "director_system":
+        version = (os.getenv("DIRECTOR_SYSTEM_VERSION") or "").strip()
+        if version:
+            versioned_path = prompts_dir / "director_system_versions" / version / "director_system.txt"
+            if not versioned_path.exists():
+                raise FileNotFoundError(
+                    f"DIRECTOR_SYSTEM_VERSION={version!r} not found at {versioned_path}"
+                )
+            return versioned_path
+
+        override_path = (os.getenv("DIRECTOR_SYSTEM_PROMPT_PATH") or "").strip()
+        if override_path:
+            path = Path(override_path)
+            if not path.is_absolute():
+                path = Path(__file__).parent.parent / override_path
+            if not path.exists():
+                raise FileNotFoundError(f"DIRECTOR_SYSTEM_PROMPT_PATH not found: {path}")
+            return path
+
+    return prompts_dir / f"{name}.txt"
 
 
 def load_prompt(name: str) -> str:
     """Load a prompt from the prompts directory (cached)."""
-    if name not in _PROMPTS:
-        prompt_path = Path(__file__).parent.parent / "prompts" / f"{name}.txt"
-        _PROMPTS[name] = prompt_path.read_text()
-    return _PROMPTS[name]
+    prompt_path = _resolve_prompt_path(name)
+    cache_key = f"{name}:{prompt_path.resolve()}"
+    if cache_key not in _PROMPTS:
+        _PROMPTS[cache_key] = prompt_path.read_text()
+    return _PROMPTS[cache_key]
 
+
+def _log(msg: str) -> None:
+    print(f"[DIRECTOR] {msg}", file=sys.stderr, flush=True)
+
+
+# ── Direct Anthropic API path ──────────────────────────────────────────────
+
+ANTHROPIC_MODEL = os.getenv("DIRECTOR_ANTHROPIC_MODEL", "claude-sonnet-4-6")
+REMOTION_SKILL_ID = os.getenv("REMOTION_SKILL_ID", "")
+
+
+def generate_storyboard_api(
+    input_text: str,
+    *,
+    model: str | None = None,
+    skill_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Generate a storyboard with per-scene Remotion code via the Anthropic Messages API.
+
+    Requires ANTHROPIC_API_KEY in the environment.
+    Each scene includes narration + scene_code (Remotion React component body).
+
+    Returns:
+        List of scene dicts, each with "narration" and "scene_code".
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise ImportError("pip install anthropic  — required for API-based storyboard generation")
+
+    client = anthropic.Anthropic()
+    system_prompt = load_prompt("director_system")
+    chosen_model = model or ANTHROPIC_MODEL
+
+    betas: list[str] = []
+    container: dict[str, Any] | None = None
+    tools: list[dict[str, Any]] | None = None
+    sid = skill_id or REMOTION_SKILL_ID
+
+    if sid:
+        betas = ["code-execution-2025-08-25", "skills-2025-10-02"]
+        container = {
+            "skills": [{"type": "custom", "skill_id": sid, "version": "latest"}],
+        }
+        tools = [{"type": "code_execution_20250825", "name": "code_execution"}]
+
+    _log(f"Calling {chosen_model}" + (f" with skill {sid}" if sid else ""))
+
+    kwargs: dict[str, Any] = {
+        "model": chosen_model,
+        "max_tokens": 128000,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": input_text}],
+    }
+    if betas:
+        kwargs["betas"] = betas
+    if container:
+        kwargs["container"] = container
+    if tools:
+        kwargs["tools"] = tools
+
+    _log("Streaming response...")
+    text = ""
+    if betas:
+        with client.beta.messages.stream(**kwargs) as stream:
+            for event in stream:
+                if hasattr(event, "type") and event.type == "content_block_delta":
+                    if hasattr(event.delta, "text"):
+                        text += event.delta.text
+    else:
+        with client.messages.stream(**kwargs) as stream:
+            for event in stream:
+                if hasattr(event, "type") and event.type == "content_block_delta":
+                    if hasattr(event.delta, "text"):
+                        text += event.delta.text
+
+    _log(f"Received {len(text)} chars of output")
+    scenes = _parse_scenes_json(text)
+    _log(f"Parsed {len(scenes)} scenes")
+    return scenes
+
+
+def _parse_scenes_json(raw: str) -> list[dict[str, Any]]:
+    """Extract scene list from model output (handles both {scenes:[...]} and bare [...])."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        raw = "\n".join(lines).strip()
+
+    parsed = json.loads(raw)
+    if isinstance(parsed, dict) and "scenes" in parsed:
+        return parsed["scenes"]
+    if isinstance(parsed, list):
+        return parsed
+    raise ValueError(f"Unexpected storyboard JSON shape: {type(parsed)}")
+
+
+def available_storyboard_runners() -> list[str]:
+    """Return list of available local storyboard runner names."""
+    try:
+        from .local_planner import available_storyboard_runners as _available
+        return _available()
+    except Exception:
+        return []
+
+
+# ── Legacy local-runner path ───────────────────────────────────────────────
 
 def generate_storyboard(
     input_text: str,
-    provider: Literal["openai", "anthropic"] = "openai",
+    provider: StoryboardProvider = "codex",
+    *,
+    project_dir: str | Path | None = None,
 ) -> list[dict]:
-    """
-    Generate a video storyboard from qEEG analysis text.
+    """Generate a storyboard using either API or local agent runner."""
+    if provider == "api":
+        return generate_storyboard_api(input_text)
 
-    Args:
-        input_text: The qEEG analysis text to convert
-        provider: LLM provider to use ("openai" or "anthropic")
-
-    Returns:
-        List of scene dictionaries with id, title, narration, visual_prompt
-    """
+    from .local_planner import (
+        generate_cathode_ready_storyboard,
+        normalize_storyboard_runner,
+    )
     system_prompt = load_prompt("director_system")
-    user_prompt = f"""Create a storyboard for an explainer video based on this qEEG analysis.
-
-CRITICAL: Total narration must be 950-1,100 words (6-7 min video).
-Target ~15 scenes, ~50 words average per content scene. Count as you go.
-
----
-{input_text}
----
-
-Return the storyboard as a JSON array of scenes."""
-
-    if provider == "openai":
-        return _generate_with_openai(system_prompt, user_prompt)
-    elif provider == "anthropic":
-        return _generate_with_anthropic(system_prompt, user_prompt)
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
-
-
-def _generate_with_openai(system_prompt: str, user_prompt: str) -> list[dict]:
-    """Generate storyboard using OpenAI GPT-5.1 Responses API."""
-    client = _get_openai_client()
-
-    response = client.responses.create(
-        model="gpt-5.1",
-        instructions=system_prompt,
-        input=user_prompt,
-        text={
-            "format": {
-                "type": "json_object"
-            }
-        },
-        temperature=0.7,
+    return generate_cathode_ready_storyboard(
+        input_text=input_text,
+        system_prompt=system_prompt,
+        runner=normalize_storyboard_runner(provider),
+        project_dir=project_dir,
     )
-
-    content = response.output_text
-    result = json.loads(content)
-
-    # Handle both direct array and wrapped object responses
-    if isinstance(result, list):
-        scenes = result
-    elif isinstance(result, dict) and "scenes" in result:
-        scenes = result["scenes"]
-    else:
-        # Try to find any array in the response
-        for value in result.values():
-            if isinstance(value, list):
-                scenes = value
-                break
-        else:
-            raise ValueError("Could not find scenes array in response")
-
-    return _validate_scenes(scenes)
-
-
-def _generate_with_anthropic(system_prompt: str, user_prompt: str) -> list[dict]:
-    """Generate storyboard using Anthropic Claude Sonnet 4 with extended thinking."""
-    client = _get_anthropic_client()
-
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8000,
-        thinking={
-            "type": "enabled",
-            "budget_tokens": 4096,
-        },
-        system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-
-    # With extended thinking, find the text block (not thinking block)
-    content = None
-    for block in response.content:
-        if block.type == "text":
-            content = block.text
-            break
-
-    if not content:
-        raise ValueError("No text response from model")
-
-    # Extract JSON from response (Claude may wrap it in markdown)
-    if "```json" in content:
-        start = content.index("```json") + 7
-        end = content.index("```", start)
-        content = content[start:end].strip()
-    elif "```" in content:
-        start = content.index("```") + 3
-        end = content.index("```", start)
-        content = content[start:end].strip()
-
-    result = json.loads(content)
-
-    # Handle both direct array and wrapped object responses
-    if isinstance(result, list):
-        scenes = result
-    elif isinstance(result, dict) and "scenes" in result:
-        scenes = result["scenes"]
-    else:
-        for value in result.values():
-            if isinstance(value, list):
-                scenes = value
-                break
-        else:
-            raise ValueError("Could not find scenes array in response")
-
-    return _validate_scenes(scenes)
-
-
-def _validate_scenes(scenes: list[dict]) -> list[dict]:
-    """Validate and normalize scene data."""
-    validated = []
-    for i, scene in enumerate(scenes):
-        narration = scene.get("narration", "").strip()
-        visual_prompt = scene.get("visual_prompt", "").strip()
-
-        if not narration:
-            raise ValueError(f"Scene {i+1} has empty narration")
-        if not visual_prompt:
-            raise ValueError(f"Scene {i+1} has empty visual prompt")
-
-        validated.append({
-            "id": scene.get("id", i),
-            "uid": scene.get("uid", str(uuid.uuid4())[:8]),
-            "title": scene.get("title", f"Scene {i + 1}"),
-            "narration": narration,
-            "visual_prompt": visual_prompt,
-            "refinement_history": scene.get("refinement_history", []),
-            "image_path": scene.get("image_path"),
-            "audio_path": scene.get("audio_path"),
-        })
-    return validated
 
 
 def refine_prompt(
     original_prompt: str,
     feedback: str,
     narration: str = "",
-    provider: Literal["openai", "anthropic"] = "openai",
+    provider: StoryboardProvider = "codex",
+    *,
+    project_dir: str | Path | None = None,
 ) -> str:
-    """
-    Refine an image prompt based on user feedback.
-
-    Args:
-        original_prompt: The current image prompt
-        feedback: User's requested changes
-        narration: The scene narration for context
-        provider: LLM provider to use
-
-    Returns:
-        Refined prompt string
-    """
+    """Refine a composition prop or text via the local runner."""
+    from .local_planner import (
+        refine_text_with_local_runner,
+        normalize_storyboard_runner,
+    )
     system_prompt = load_prompt("refiner_system")
-
-    narration_context = f"\nScene narration (for context): {narration}\n" if narration else ""
-
-    user_prompt = f"""Original prompt: {original_prompt}
-{narration_context}
-User feedback: {feedback}
-
-Please provide the refined prompt."""
-
-    if provider == "openai":
-        client = _get_openai_client()
-        response = client.responses.create(
-            model="gpt-5.1",
-            instructions=system_prompt,
-            input=user_prompt,
-            temperature=0.7,
-        )
-        return response.output_text.strip()
-
-    elif provider == "anthropic":
-        client = _get_anthropic_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2048,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        text_block = next((b for b in response.content if hasattr(b, 'text')), None)
-        if not text_block:
-            raise ValueError("No text response from model")
-        return text_block.text.strip()
-
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    return refine_text_with_local_runner(
+        field_name="visual_prompt",
+        original_text=original_prompt,
+        feedback=feedback,
+        narration=narration,
+        system_prompt=system_prompt,
+        runner=normalize_storyboard_runner(provider),
+        project_dir=project_dir,
+    )
 
 
 def refine_narration(
     original_narration: str,
     feedback: str,
-    provider: Literal["openai", "anthropic"] = "openai",
+    provider: StoryboardProvider = "codex",
+    *,
+    project_dir: str | Path | None = None,
 ) -> str:
-    """
-    Refine a scene narration based on user feedback.
-
-    Args:
-        original_narration: The current narration text
-        feedback: User's requested changes
-        provider: LLM provider to use
-
-    Returns:
-        Refined narration string
-    """
+    """Refine narration via the local runner."""
+    from .local_planner import (
+        refine_text_with_local_runner,
+        normalize_storyboard_runner,
+    )
     system_prompt = load_prompt("refiner_narration_system")
+    return refine_text_with_local_runner(
+        field_name="narration",
+        original_text=original_narration,
+        feedback=feedback,
+        system_prompt=system_prompt,
+        runner=normalize_storyboard_runner(provider),
+        project_dir=project_dir,
+    )
 
-    user_prompt = f"""Original narration: {original_narration}
 
-User feedback: {feedback}
-
-Please provide the refined narration."""
-
-    if provider == "openai":
-        client = _get_openai_client()
-        response = client.responses.create(
-            model="gpt-5.1",
-            instructions=system_prompt,
-            input=user_prompt,
-            temperature=0.7,
-        )
-        return response.output_text.strip()
-
-    elif provider == "anthropic":
-        client = _get_anthropic_client()
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2048,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-        text_block = next((b for b in response.content if hasattr(b, 'text')), None)
-        if not text_block:
-            raise ValueError("No text response from model")
-        return text_block.text.strip()
-
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+__all__ = [
+    "available_storyboard_runners",
+    "generate_storyboard",
+    "generate_storyboard_api",
+    "load_prompt",
+    "refine_narration",
+    "refine_prompt",
+]

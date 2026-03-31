@@ -75,7 +75,7 @@ DEFAULT_SPEED = 1.1  # Slightly faster than normal
 DEFAULT_EXAGGERATION = 0.6  # Slightly more expressive than neutral (0.5)
 
 # TTS Provider type
-TTSProvider = Literal["kokoro", "elevenlabs", "chatterbox", "openai"]
+TTSProvider = Literal["kokoro", "elevenlabs", "elevenlabs_replicate", "chatterbox", "openai"]
 
 
 def generate_audio(
@@ -135,6 +135,16 @@ def generate_audio(
             speed=speed,
             use_speaker_boost=elevenlabs_use_speaker_boost,
             apply_text_normalization=elevenlabs_apply_text_normalization,
+        )
+    elif tts_provider == "elevenlabs_replicate":
+        return _generate_with_elevenlabs_replicate(
+            text=text,
+            output_path=output_path,
+            voice=voice,
+            speed=speed,
+            stability=elevenlabs_stability,
+            similarity_boost=elevenlabs_similarity_boost,
+            style=elevenlabs_style,
         )
     elif tts_provider == "chatterbox":
         return _generate_with_chatterbox(text, output_path, exaggeration)
@@ -233,6 +243,99 @@ def _generate_with_chatterbox(
 
     # Otherwise convert (though WAV is preferred)
     return temp_path
+
+
+def _generate_with_elevenlabs_replicate(
+    *,
+    text: str,
+    output_path: Path,
+    voice: str = DEFAULT_ELEVENLABS_VOICE,
+    model_slug: str = "elevenlabs/flash-v2.5",
+    speed: float = 1.15,
+    stability: float = DEFAULT_ELEVENLABS_STABILITY,
+    similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
+    style: float = DEFAULT_ELEVENLABS_STYLE,
+) -> Path:
+    """Generate audio using ElevenLabs on Replicate.
+
+    Avoids direct ElevenLabs API quota issues; billing goes through Replicate.
+    Follows the same pattern as _generate_with_chatterbox().
+    """
+    import replicate
+
+    # Replicate ElevenLabs has its own voice set (different from direct API)
+    REPLICATE_ELEVENLABS_VOICES = {
+        "Rachel", "Drew", "Clyde", "Paul", "Aria", "Domi", "Dave", "Roger",
+        "Fin", "Sarah", "James", "Jane", "Juniper", "Arabella", "Hope",
+        "Bradford", "Reginald", "Gaming", "Austin", "Kuon", "Blondie",
+        "Priyanka", "Alexandra", "Monika", "Mark", "Grimblewood",
+    }
+    # Map direct-API voice names to closest Replicate equivalents
+    VOICE_MAP = {
+        "Antoni": "Drew",     # Calm professional male
+        "Josh": "Dave",       # Deep authoritative male
+        "Adam": "Mark",       # Deep warm male
+        "Arnold": "Austin",   # Bold energetic male
+        "Rachel": "Rachel",   # Warm calm female
+        "Bella": "Aria",      # Friendly conversational female
+        "Elli": "Jane",       # Young energetic female
+    }
+    replicate_voice = VOICE_MAP.get(voice, voice)
+    if replicate_voice not in REPLICATE_ELEVENLABS_VOICES:
+        replicate_voice = "Drew"  # safe fallback
+
+    def _call_elevenlabs_replicate():
+        return replicate.run(
+            model_slug,
+            input={
+                "prompt": text,
+                "voice": replicate_voice,
+                "speed": speed,
+                "stability": stability,
+                "similarity_boost": similarity_boost,
+                "style": style,
+            }
+        )
+
+    output_url = image_limiter.call_with_retry(_call_elevenlabs_replicate)
+
+    # Download the audio file (Replicate returns a URL)
+    if hasattr(output_url, "url"):
+        url = output_url.url
+    elif isinstance(output_url, str):
+        url = output_url
+    else:
+        url = str(output_url)
+
+    response = requests.get(url)
+    response.raise_for_status()
+
+    # Save as the output format (likely mp3 from ElevenLabs)
+    temp_path = output_path.with_suffix(".mp3")
+    temp_path.write_bytes(response.content)
+
+    # Convert to WAV if needed
+    if output_path.suffix == ".wav":
+        wav_path = output_path
+        _convert_mp3_to_wav(temp_path, wav_path)
+        temp_path.unlink(missing_ok=True)
+        return wav_path
+
+    if temp_path != output_path:
+        temp_path.rename(output_path)
+    return output_path
+
+
+def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
+    """Convert MP3 to WAV using soundfile or ffmpeg fallback."""
+    import subprocess
+    import shutil
+
+    ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    subprocess.run(
+        [ffmpeg, "-y", "-i", str(mp3_path), "-ar", "24000", "-ac", "1", str(wav_path)],
+        capture_output=True, timeout=30, check=True,
+    )
 
 
 def _generate_with_elevenlabs(

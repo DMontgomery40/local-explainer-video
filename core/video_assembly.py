@@ -1,6 +1,10 @@
-"""Video assembly using MoviePy."""
+"""Video assembly using MoviePy (v1) and ffmpeg (v2)."""
 
+import platform
+import shutil
+import subprocess
 from pathlib import Path
+from typing import Any
 
 from moviepy import (
     AudioFileClip,
@@ -258,3 +262,151 @@ def get_video_duration(scenes: list[dict]) -> float:
             total_duration += 5.0
 
     return total_duration
+
+
+# --- V2 Assembly: ffmpeg-based, clip + audio mux, h264_videotoolbox on Mac ---
+
+_FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+_FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
+_PAD_COLOR = "0a0a0f"
+
+
+def _get_media_duration(path: Path) -> float:
+    """Get media duration in seconds via ffprobe."""
+    result = subprocess.run(
+        [_FFPROBE, "-v", "quiet", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    return float(result.stdout.strip())
+
+
+def _pick_encoder() -> tuple[list[str], str]:
+    """Pick the best H.264 encoder: h264_videotoolbox on Mac, libx264 fallback."""
+    if platform.system() == "Darwin":
+        # Try videotoolbox first
+        result = subprocess.run(
+            [_FFMPEG, "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if "h264_videotoolbox" in result.stdout:
+            return ["-c:v", "h264_videotoolbox", "-b:v", "4M"], "h264_videotoolbox"
+    return ["-c:v", "libx264", "-preset", "fast", "-crf", "23"], "libx264"
+
+
+def _mux_segment(
+    clip_path: Path,
+    audio_path: Path,
+    output_path: Path,
+    encoder_args: list[str],
+    fps: int = 30,
+) -> Path:
+    """Mux one video clip + audio into a segment. No tpad -- clip is already correct duration."""
+    audio_dur = _get_media_duration(audio_path)
+
+    vf = (
+        f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color={_PAD_COLOR}"
+    )
+
+    cmd = [
+        _FFMPEG, "-y",
+        "-i", str(clip_path),
+        "-i", str(audio_path),
+        *encoder_args,
+        "-c:a", "aac", "-b:a", "128k",
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-vf", vf,
+        "-r", str(fps),
+        "-t", str(audio_dur),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(f"Mux failed for {clip_path.name}: {result.stderr[-300:]}")
+    return output_path
+
+
+def assemble_v2_video(
+    scenes: list[dict[str, Any]],
+    project_dir: Path,
+    output_filename: str | None = None,
+    fps: int = 30,
+) -> Path:
+    """Assemble v2 video from pre-recorded clips + audio.
+
+    Each scene dict must have clip_path and audio_path.
+    No tpad needed -- clips are already recorded to match audio duration.
+    Uses h264_videotoolbox on Mac for GPU acceleration.
+
+    Args:
+        scenes: List of scene dicts with clip_path and audio_path
+        project_dir: Project directory
+        output_filename: Output filename (default: <project_name>.mp4)
+        fps: Frames per second
+
+    Returns:
+        Path to the assembled video
+    """
+    project_dir = Path(project_dir)
+    tmp_dir = project_dir / "tmp_segments"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    encoder_args, encoder_name = _pick_encoder()
+    print(f"  Encoder: {encoder_name}")
+
+    # Mux each scene
+    segments: list[Path] = []
+    for i, scene in enumerate(scenes):
+        clip_path = Path(str(scene.get("clip_path", "")))
+        audio_path = Path(str(scene.get("audio_path", "")))
+
+        if not clip_path.exists():
+            print(f"  [SKIP] Scene {i}: clip not found: {clip_path}")
+            continue
+        if not audio_path.exists():
+            print(f"  [SKIP] Scene {i}: audio not found: {audio_path}")
+            continue
+
+        seg_path = tmp_dir / f"seg_{i:03d}.mp4"
+        audio_dur = _get_media_duration(audio_path)
+        clip_dur = _get_media_duration(clip_path)
+        print(f"  [mux] Scene {i}: audio={audio_dur:.1f}s clip={clip_dur:.1f}s")
+
+        _mux_segment(clip_path, audio_path, seg_path, encoder_args, fps)
+        segments.append(seg_path)
+
+    if not segments:
+        raise RuntimeError("No segments to concatenate")
+
+    # Concatenate
+    concat_file = tmp_dir / "concat.txt"
+    with open(concat_file, "w") as f:
+        for seg in segments:
+            f.write(f"file '{seg.resolve()}'\n")
+
+    name = output_filename or f"{project_dir.name}.mp4"
+    output_path = project_dir / name
+
+    # Archive existing if present
+    _archive_existing_video(output_path, project_dir)
+
+    cmd = [
+        _FFMPEG, "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_file),
+        *encoder_args,
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        str(output_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        raise RuntimeError(f"Concat failed: {result.stderr[-500:]}")
+
+    total_dur = _get_media_duration(output_path)
+    size_mb = output_path.stat().st_size / (1024 * 1024)
+    print(f"  Final: {output_path.name} ({total_dur:.1f}s, {size_mb:.1f}MB, {encoder_name})")
+    return output_path

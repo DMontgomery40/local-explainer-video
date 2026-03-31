@@ -3,8 +3,7 @@
 Batch regenerate videos for all valid patient ID projects.
 
 Usage:
-    python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...] [--image-model MODEL]
-                                 [--use-eeg-10-20-guide | --no-eeg-10-20-guide]
+    python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...]
 
 Valid patient ID format: MM-DD-YYYY-N (e.g., 01-01-1991-0)
 """
@@ -22,7 +21,8 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from core.director import generate_storyboard
-from core.image_gen import DEFAULT_IMAGE_GEN_MODEL, IMAGEN_4_MODEL, generate_scene_image
+from core.local_planner import normalize_storyboard_runner
+from core.image_gen import generate_scene_image
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -105,13 +105,8 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
         print(f"ERROR: No input_text found in {project_name}/plan.json")
         return False
 
-    provider = old_plan.get("meta", {}).get("llm_provider", "anthropic")
+    provider = normalize_storyboard_runner(old_plan.get("meta", {}).get("llm_provider", "claude"))
     meta = old_plan.get("meta", {}) if isinstance(old_plan.get("meta"), dict) else {}
-    image_model = str(ARGS.get("image_model") or meta.get("image_model") or DEFAULT_IMAGE_GEN_MODEL).strip()
-    if ARGS.get("use_eeg_10_20_guide") is None:
-        use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide", False))
-    else:
-        use_eeg_10_20_guide = bool(ARGS.get("use_eeg_10_20_guide"))
 
     # TTS settings: prefer CLI args (if provided), else prefer plan meta, else defaults.
     tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "kokoro").strip()
@@ -155,8 +150,6 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
 
     if dry_run:
         print(f"  [DRY RUN] Would regenerate with provider: {provider}")
-        print(f"  [DRY RUN] Image model: {image_model}")
-        print(f"  [DRY RUN] EEG 10-20 guide: {use_eeg_10_20_guide}")
         print(f"  [DRY RUN] Input text length: {len(input_text)} chars")
         print(f"  [DRY RUN] TTS: provider={tts_provider} voice={tts_voice} speed={tts_speed}")
         return True
@@ -164,7 +157,7 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     # Step 1: Generate new storyboard
     print(f"\n[1/4] Generating storyboard...")
     try:
-        scenes = generate_storyboard(input_text, provider=provider)
+        scenes = generate_storyboard(input_text, provider=provider, project_dir=project_dir)
         print(f"  Generated {len(scenes)} scenes")
     except Exception as e:
         print(f"ERROR: Storyboard generation failed: {e}")
@@ -181,8 +174,9 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             "created_utc": datetime.utcnow().isoformat(),
             "regenerated_utc": datetime.utcnow().isoformat(),
             "llm_provider": provider,
-            "image_model": image_model,
-            "use_eeg_10_20_guide": use_eeg_10_20_guide,
+            "planner_mode": "agentic_local_qeeg",
+            "local_planner_runner": provider,
+            "image_model": "qwen/qwen-image-2512",
             "input_text": input_text,
             "tts_provider": tts_provider,
             "tts_voice": tts_voice,
@@ -201,17 +195,17 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     save_plan(project_dir, new_plan)
     print(f"  Saved new plan.json")
 
+    if any(str(scene.get("scene_type") or "").strip().lower() == "motion" for scene in scenes):
+        print("  Plan contains Cathode native motion scenes; stopping after storyboard save.")
+        print("  Use Cathode for downstream Remotion execution of this spike output.")
+        return True
+
     # Step 2: Generate images
     print(f"\n[2/4] Generating images...")
     for i, scene in enumerate(scenes):
         print(f"  Scene {i+1}/{len(scenes)}: {scene.get('title', 'Untitled')[:40]}...")
         try:
-            path = generate_scene_image(
-                scene,
-                project_dir,
-                model=image_model,
-                use_eeg_10_20_guide=use_eeg_10_20_guide,
-            )
+            path = generate_scene_image(scene, project_dir)
             scene["image_path"] = str(path)
             save_plan(project_dir, new_plan)
         except Exception as e:
@@ -261,24 +255,6 @@ def main():
     parser = argparse.ArgumentParser(description="Batch regenerate patient videos")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
     parser.add_argument("--projects", type=str, help="Comma-separated list of specific projects to process")
-    parser.add_argument(
-        "--image-model",
-        type=str,
-        default="",
-        help=f"Replicate image model (e.g., {DEFAULT_IMAGE_GEN_MODEL} or {IMAGEN_4_MODEL}).",
-    )
-    parser.add_argument(
-        "--use-eeg-10-20-guide",
-        action="store_true",
-        default=None,
-        help="Append a 10-20 electrode-placement reminder to image prompts.",
-    )
-    parser.add_argument(
-        "--no-eeg-10-20-guide",
-        action="store_false",
-        dest="use_eeg_10_20_guide",
-        help="Disable the 10-20 electrode-placement reminder.",
-    )
     parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: kokoro, elevenlabs, openai (default: from plan meta or kokoro)")
     parser.add_argument("--tts-voice", type=str, default="", help="TTS voice (Kokoro voice id or ElevenLabs voice name)")
     parser.add_argument("--tts-speed", type=float, default=0.0, help="TTS speed (Kokoro or ElevenLabs). 0 means default/from meta.")
@@ -302,8 +278,6 @@ def main():
     # Normalize CLI args into a simple dict for use inside regenerate_project()
     global ARGS
     ARGS = {
-        "image_model": (args.image_model or "").strip(),
-        "use_eeg_10_20_guide": args.use_eeg_10_20_guide,
         "tts_provider": (args.tts_provider or "").strip(),
         "tts_voice": (args.tts_voice or "").strip(),
         "tts_speed": float(args.tts_speed) if args.tts_speed else 0.0,
