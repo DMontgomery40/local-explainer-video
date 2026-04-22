@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from core.local_planner import (
+    CathodeResourceMap,
     DEFAULT_CLAUDE_BINARY,
     build_cathode_resource_map,
     build_claude_command,
@@ -49,7 +52,29 @@ def test_build_claude_command_uses_explicit_binary_and_json_schema():
     assert "--no-session-persistence" in command
 
 
-def test_build_storyboard_prompt_includes_real_cathode_paths_and_art_first_note():
+def test_build_storyboard_prompt_includes_real_cathode_paths_and_art_first_note(monkeypatch):
+    resource_map = CathodeResourceMap(
+        cathode_root=Path("/Users/davidmontgomery/cathode"),
+        template_backgrounds_dir=Path("/Users/davidmontgomery/cathode/template_deck/backgrounds"),
+        text_zones_json=Path("/Users/davidmontgomery/cathode/template_deck/text_zones.json"),
+        template_layout_map_ts=Path("/Users/davidmontgomery/cathode/frontend/src/remotion/templateLayoutMap.ts"),
+        clinical_template_prompt=Path("/Users/davidmontgomery/cathode/prompts/director_clinical_template_system_prompt.txt"),
+        scene_family_contracts=Path("/Users/davidmontgomery/cathode/skills/cathode-remotion-development/references/scene-family-contracts.md"),
+        remotion_architecture=Path("/Users/davidmontgomery/cathode/skills/cathode-remotion-development/references/cathode-remotion-architecture.md"),
+        codex_skill=Path("/Users/davidmontgomery/.codex/skills/remotion/SKILL.md"),
+        claude_skill=Path("/Users/davidmontgomery/.claude/skills/remotion/SKILL.md"),
+        quality_bar_paths=(),
+    )
+
+    monkeypatch.setattr("core.local_planner.build_cathode_resource_map", lambda: resource_map)
+    monkeypatch.setattr(
+        "core.local_planner._background_ids",
+        lambda _resource_map: ["metric_improvement", "clinical_explanation"],
+    )
+    monkeypatch.setattr(
+        "core.local_planner._read_text",
+        lambda path: f"CONTENTS FOR {path}",
+    )
     prompt = build_storyboard_prompt("Patient data here", "SYSTEM")
 
     assert "/Users/davidmontgomery/cathode/template_deck/text_zones.json" in prompt

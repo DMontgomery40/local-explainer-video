@@ -12,11 +12,10 @@ import {
   Easing,
 } from "remotion";
 
-interface DynamicSceneProps {
-  code: string;
-}
+type DynamicSceneProps = Record<string, unknown>;
 
-export const DynamicScene: React.FC<DynamicSceneProps> = ({ code }) => {
+export const DynamicScene: React.FC<DynamicSceneProps> = (props) => {
+  const code = typeof props.code === "string" ? props.code : "";
   const Component = useMemo(() => {
     if (!code?.trim()) return null;
 

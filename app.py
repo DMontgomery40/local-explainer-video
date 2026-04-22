@@ -22,11 +22,11 @@ from dotenv import load_dotenv
 from core.director import (
     available_storyboard_runners,
     generate_storyboard,
-    generate_storyboard_api,
     refine_prompt,
     refine_narration,
 )
 from core.image_gen import generate_scene_image, edit_image
+from core.scene_modes import plan_has_cathode_motion_scenes, scene_is_cathode_motion
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -42,7 +42,7 @@ from core.voice_gen import (
     ELEVENLABS_VOICES,
     KOKORO_VOICES,
     generate_scene_audio,
- )
+)
 from core.video_assembly import assemble_video, get_video_duration, preview_scene
 from core.qc_publish import (
     QCPublishConfig,
@@ -119,14 +119,14 @@ def save_plan(project_dir: Path, plan: dict) -> None:
     plan_path.write_text(json.dumps(plan, indent=2))
 
 
-def _scene_is_cathode_motion(scene: dict) -> bool:
-    """Whether a scene is a Cathode native/template motion scene."""
-    if str(scene.get("scene_type") or "").strip().lower() == "motion":
-        return True
-    composition = scene.get("composition")
-    if not isinstance(composition, dict):
+def _codex_cli_available() -> bool:
+    """Whether the local Codex CLI is available for image generation."""
+    binary = (os.getenv("CODEX_BINARY") or "codex").strip()
+    if not binary:
         return False
-    return str(composition.get("mode") or "").strip().lower() == "native"
+    if os.sep in binary:
+        return Path(binary).expanduser().exists()
+    return shutil.which(binary) is not None
 
 
 def _looks_like_latex(text: str) -> bool:
@@ -328,7 +328,9 @@ def render_sidebar():
         st.divider()
 
         st.subheader("Scene Rendering")
-        st.caption("Scenes are rendered deterministically via Remotion compositions. No image generation API key required.")
+        st.caption("Prompt-bearing still images prefer local Codex `gpt-image-2` generation. Cathode motion/template scenes are legacy and de-emphasized here.")
+        if not _codex_cli_available():
+            st.warning("`codex` CLI not found. Still-image generation will fail until local Codex is installed and available on PATH.")
 
         # DashScope-only controls (hidden when Replicate model is selected)
         is_dashscope_model = str(st.session_state.image_edit_model).startswith("qwen-image-edit")
@@ -585,13 +587,16 @@ def render_step_1():
 
     # Storyboard provider selection
     available_providers = available_storyboard_runners()
-    all_providers = ["api"] + available_providers
+    local_first = [runner for runner in ("codex", "claude") if runner in available_providers]
+    extra_local = [runner for runner in available_providers if runner not in local_first]
+    all_providers = local_first + extra_local + ["api"]
+    provider_index = all_providers.index("codex") if "codex" in all_providers else 0
 
     provider = st.selectbox(
         "Storyboard Provider",
         options=all_providers,
-        help="'api' calls Anthropic Messages API directly (recommended). "
-             "Others use local agent CLIs (codex/claude).",
+        index=provider_index,
+        help="Prefer local runners for the editable working path. `api` is the direct Anthropic fallback.",
     )
 
     # Input text
@@ -663,7 +668,7 @@ def render_step_2():
     plan = st.session_state.plan
     project_dir = st.session_state.project_dir
     scenes = plan["scenes"]
-    has_motion_scenes = any(_scene_is_cathode_motion(scene) for scene in scenes)
+    has_motion_scenes = plan_has_cathode_motion_scenes(scenes)
 
     # Back button
     if st.button("← Back to Input"):
@@ -878,7 +883,7 @@ def render_step_2():
             with col2:
                 # Image preview and generation
                 st.subheader("Image")
-                if _scene_is_cathode_motion(scene):
+                if scene_is_cathode_motion(scene):
                     st.info(
                         "This is a Cathode native motion/template scene. "
                         "The local-explainer-video image pass is intentionally skipped."
@@ -940,7 +945,7 @@ def render_step_2():
                 has_image = (
                     scene.get("image_path")
                     and Path(scene["image_path"]).exists()
-                    and not _scene_is_cathode_motion(scene)
+                    and not scene_is_cathode_motion(scene)
                 )
                 has_audio = scene.get("audio_path") and Path(scene["audio_path"]).exists()
 
@@ -982,7 +987,7 @@ def render_step_2():
 
             for i, scene in enumerate(scenes):
                 has_image = scene.get("image_path") and Path(scene["image_path"]).exists()
-                if _scene_is_cathode_motion(scene):
+                if scene_is_cathode_motion(scene):
                     skipped += 1
                 elif not has_image:
                     status.text(f"Generating image {i+1}/{len(scenes)}: {scene['title'][:30]}...")
@@ -1052,13 +1057,13 @@ def render_step_2():
         all_images = all(
             scene.get("image_path") and Path(scene["image_path"]).exists()
             for scene in scenes
-            if not _scene_is_cathode_motion(scene)
+            if not scene_is_cathode_motion(scene)
         )
         all_audio = all(
             scene.get("audio_path") and Path(scene["audio_path"]).exists()
             for scene in scenes
         )
-        has_motion_scenes = any(_scene_is_cathode_motion(scene) for scene in scenes)
+        has_motion_scenes = plan_has_cathode_motion_scenes(scenes)
 
         if st.button(
             "Go to Render / QC →",
@@ -1076,7 +1081,7 @@ def render_step_2():
 
     st.divider()
     st.subheader("Regenerate Everything")
-    st.caption("Regenerates ALL images (Replicate) and ALL audio (TTS) in parallel. This overwrites existing assets.")
+    st.caption("Regenerates ALL prompt-bearing still images via local Codex `gpt-image-2` and ALL audio via TTS in parallel. This overwrites existing assets.")
 
     if st.button("Regenerate Everything (Images + Audio)", type="primary", key="regen_everything_parallel"):
         tts_kwargs = _tts_kwargs_from_state()
@@ -1087,7 +1092,7 @@ def render_step_2():
 
         img_col, aud_col = st.columns(2)
         with img_col:
-            st.markdown("**Images (Replicate)**")
+            st.markdown("**Images (Codex gpt-image-2)**")
             img_status = st.empty()
             img_progress = st.progress(0.0)
         with aud_col:
@@ -1109,7 +1114,7 @@ def render_step_2():
             try:
                 for i, scene in enumerate(scenes):
                     sid = int(scene.get("id", i))
-                    if _scene_is_cathode_motion(scene):
+                    if scene_is_cathode_motion(scene):
                         q.put(("image_ok", i + 1, total, sid))
                     else:
                         try:
@@ -1219,6 +1224,7 @@ def render_step_3():
     plan = st.session_state.plan
     project_dir = st.session_state.project_dir
     scenes = plan["scenes"]
+    has_motion_scenes = plan_has_cathode_motion_scenes(scenes)
 
     # Back button
     if st.button("← Back to Scenes"):
@@ -1284,6 +1290,13 @@ def render_step_3():
 
     st.divider()
     st.subheader("QC + Publish")
+    if has_motion_scenes:
+        st.info(
+            "QC + Publish is disabled for Cathode native motion/template scenes in this repo. "
+            "If this project needs portal publishing, convert it back to prompt-bearing still scenes here or finish the motion render path downstream in Cathode."
+        )
+        return
+
     st.caption(
         "Runs a final verification pass against qEEG Council ground truth, optionally fixes slide text via image-edit (no regeneration), "
         "re-renders the video, then publishes the MP4 to qEEG Council + the clinician portal sync folder."
@@ -1540,7 +1553,7 @@ def render_batch_queue():
             scenes = plan.get("scenes", [])
             missing_images = sum(
                 1 for s in scenes
-                if not _scene_is_cathode_motion(s)
+                if not scene_is_cathode_motion(s)
                 if not s.get("image_path") or not Path(s["image_path"]).exists()
             )
             missing_audio = sum(
@@ -1588,7 +1601,7 @@ def render_batch_queue():
             # Generate missing images
             if generate_images:
                 for scene in scenes:
-                    if _scene_is_cathode_motion(scene):
+                    if scene_is_cathode_motion(scene):
                         continue
                     if not scene.get("image_path") or not Path(scene["image_path"]).exists():
                         try:
@@ -1611,11 +1624,11 @@ def render_batch_queue():
 
             # Assemble video if all assets ready
             if assemble_videos:
-                has_motion_scenes = any(_scene_is_cathode_motion(s) for s in scenes)
+                has_motion_scenes = plan_has_cathode_motion_scenes(scenes)
                 all_images = all(
                     s.get("image_path") and Path(s["image_path"]).exists()
                     for s in scenes
-                    if not _scene_is_cathode_motion(s)
+                    if not scene_is_cathode_motion(s)
                 )
                 all_audio = all(
                     s.get("audio_path") and Path(s["audio_path"]).exists()
