@@ -81,9 +81,18 @@ IMAGE_EDIT_MODEL=qwen-image-edit-max   # or: qwen/qwen-image-edit-2511
 
 # Optional: append EEG 10-20 anatomical guidance to image prompts
 USE_EEG_10_20_GUIDE=true
+
+# Optional: local Claude Code print-mode storyboard lane
+CLAUDE_CODE_BINARY=/Users/davidmontgomery/.local/bin/claude
+CLAUDE_LOCAL_REMOTION_MODEL=claude-opus-4-6
+CLAUDE_LOCAL_REMOTION_TOOLS=Read,Grep,Glob,Bash
+CLAUDE_LOCAL_REMOTION_USE_API_KEY=false
 ```
 
 You need at least one of OpenAI or Anthropic for the director agent.
+
+For the separate local Claude CLI storyboard lane, `CLAUDE_LOCAL_REMOTION_USE_API_KEY` defaults to `false`, so the helper
+prefers Claude Code subscription auth and strips `ANTHROPIC_API_KEY` unless you explicitly opt back into API-key billing.
 
 ### 4. Run
 
@@ -98,6 +107,20 @@ Opens at http://localhost:8501
 ---
 
 ## Adapting for Other Uses
+
+## Optional CLI Storyboard Lanes
+
+If you want a save-only CLI path instead of driving the Streamlit UI:
+
+```bash
+python3.10 scripts/run_local_claude_storyboard.py report.md --project-prefix 12-20-1975-0
+python3.10 scripts/save_storyboard_batch_result.py msgbatch_123 --project-prefix 12-20-1975-0 --wait
+python3.10 scripts/save_storyboard_batch_result.py msgbatch_123 --project-prefix 12-20-1975-0 --wait --render
+```
+
+- `run_local_claude_storyboard.py` uses `claude -p` locally, saves `plan.json`, and records the exact prompt/command/stdout artifacts inside the project folder.
+- `save_storyboard_batch_result.py` polls an Anthropic batch result and saves the finished storyboard. Add `--render` only when you want the local still-image pipeline to generate PNGs, audio, and an MP4 after the batch completes.
+- The batch saver stays on the still-image path. If the saved plan includes Cathode native motion scenes, it stops and tells you to render those downstream in Cathode instead of silently falling back.
 
 ### Podcast Mode
 
