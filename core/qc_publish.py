@@ -27,6 +27,7 @@ import requests
 from PIL import Image
 
 from core.image_gen import edit_image
+from core.scene_modes import plan_has_cathode_motion_scenes
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -370,7 +371,7 @@ def run_opus_narrative_qc(
     consolidated_md: str,
     data_pack: dict[str, Any],
     plan: dict[str, Any],
-    model: str = "claude-opus-4-6",
+    model: str = "claude-opus-4-5",
     max_tokens: int = 3000,
 ) -> NarrativeQCResult:
     system = _load_prompt_text("qc_opus_system")
@@ -821,7 +822,7 @@ class QCPublishConfig:
     backend_url: str
     cliproxy_url: str
     cliproxy_api_key: str
-    opus_model: str = "claude-opus-4-6"
+    opus_model: str = "claude-opus-4-5"
     gemini_model: str = "gemini-3-flash"
     max_visual_passes: int = 5
     max_image_edit_attempts: int = 3
@@ -892,6 +893,12 @@ def qc_and_publish_project(
     def _prog(v: float) -> None:
         if set_progress:
             set_progress(v)
+
+    if plan_has_cathode_motion_scenes(plan):
+        raise QCPublishError(
+            "QC + Publish no longer supports Cathode native motion/template scenes in local-explainer-video. "
+            "This repo's publish path only assembles prompt-bearing still-image scenes; render/publish motion plans downstream in Cathode or convert them back to still scenes first."
+        )
 
     _phase("Loading qEEG ground truth (Stage 4 consolidation + _data_pack.json)…")
     gt = load_qeeg_ground_truth(qeeg_dir=config.qeeg_dir, patient_label=patient_id)
