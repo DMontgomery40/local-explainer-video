@@ -84,37 +84,58 @@ def _ensure_png(path: Path) -> Path:
     return path
 
 
-def _normalize_image_to_target(path: Path) -> tuple[int, int]:
+def _target_aspect_ratio(width: int, height: int) -> str:
+    if width == 1080 and height == 1920:
+        return "9:16"
+    if width == TARGET_WIDTH and height == TARGET_HEIGHT:
+        return TARGET_ASPECT_RATIO
+    return f"{width}:{height}"
+
+
+def _render_constraint_text(width: int, height: int) -> str:
+    aspect = _target_aspect_ratio(width, height)
+    if height > width:
+        return (
+            f"portrait {aspect}, vertical phone-first frame, target frame {width}x{height}, "
+            "no square composition, no landscape composition, keep all text and important graphics fully visible inside safe margins"
+        )
+    return (
+        f"landscape {aspect}, widescreen slide, target frame {width}x{height}, "
+        "no square composition, no portrait composition, keep all text and important graphics fully visible inside safe margins"
+    )
+
+
+def _normalize_image_to_target(path: Path, width: int = TARGET_WIDTH, height: int = TARGET_HEIGHT) -> tuple[int, int]:
     from PIL import Image, ImageFilter, ImageOps
 
     with Image.open(path) as img:
         source = img.convert("RGB")
         original_size = source.size
 
-        if original_size == (TARGET_WIDTH, TARGET_HEIGHT):
+        if original_size == (width, height):
             return original_size
 
         background = ImageOps.fit(
             source,
-            (TARGET_WIDTH, TARGET_HEIGHT),
+            (width, height),
             method=Image.Resampling.LANCZOS,
             centering=(0.5, 0.5),
         )
         background = background.filter(ImageFilter.GaussianBlur(radius=28))
         background = Image.blend(
             background,
-            Image.new("RGB", (TARGET_WIDTH, TARGET_HEIGHT), (0, 0, 0)),
+            Image.new("RGB", (width, height), (0, 0, 0)),
             0.32,
         )
 
         foreground = ImageOps.contain(
             source,
-            (TARGET_WIDTH, TARGET_HEIGHT),
+            (width, height),
             method=Image.Resampling.LANCZOS,
         )
         offset = (
-            (TARGET_WIDTH - foreground.width) // 2,
-            (TARGET_HEIGHT - foreground.height) // 2,
+            (width - foreground.width) // 2,
+            (height - foreground.height) // 2,
         )
         background.paste(foreground, offset)
         background.save(path, format="PNG", optimize=True)
@@ -137,6 +158,8 @@ def build_codex_image_prompt(
     output_path: Path,
     image_model: str = DEFAULT_IMAGE_GEN_MODEL,
     title: str = "",
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
 ) -> str:
     trimmed_title = str(title or "").strip()
     title_line = f"Scene title: {trimmed_title}\n" if trimmed_title else ""
@@ -145,11 +168,12 @@ def build_codex_image_prompt(
         "Use only Codex's built-in native image generation capability in this session.\n"
         "Do not use skill scripts, wrappers, Python API clients, or any API-key-based image generation workflow.\n"
         "Do not inspect `~/.codex/skills`, `.env` files, config files, or search the filesystem for `OPENAI_API_KEY` or any other secret.\n"
+        "Do not search `/tmp`, `/var/folders`, Downloads, Desktop, this repo, or any other folder for recent PNGs. Use only the image artifact you generate in this turn.\n"
         "If the built-in native image generation capability is unavailable, stop immediately and fail.\n\n"
         f"{title_line}"
         "Generate exactly one still PNG from the following prompt.\n"
         f"- Image model: {image_model}\n"
-        f"- Fixed render constraints: landscape {TARGET_ASPECT_RATIO}, widescreen slide, target frame {TARGET_WIDTH}x{TARGET_HEIGHT}, no square composition, no portrait composition, keep all text and important graphics fully visible inside safe margins.\n"
+        f"- Fixed render constraints: {_render_constraint_text(target_width, target_height)}.\n"
         "- Use the existing prompt text as the core content prompt. Do not otherwise rewrite, summarize, or refine it.\n"
         "- Any quoted on-screen text or branded term must be rendered exactly and case-sensitively.\n"
         f"- Copy the generated PNG to {output_path}.\n"
@@ -165,6 +189,8 @@ def _run_codex_exec_image(
     prompt: str,
     output_path: Path,
     runner_model: str | None = None,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
 ) -> Path:
     if not _codex_cli_available():
         raise RuntimeError(
@@ -207,17 +233,113 @@ def _run_codex_exec_image(
             check=False,
         )
 
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"codex exec failed while generating {output_path.name}; inspect {jsonl_path}"
-        )
     if not output_path.exists():
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"codex exec failed while generating {output_path.name}; inspect {jsonl_path}"
+            )
         raise RuntimeError(
             f"codex exec finished without writing {output_path}; inspect {jsonl_path} and {final_message_path}"
         )
 
     _ensure_png(output_path)
-    _normalize_image_to_target(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
+    return output_path
+
+
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _scene_target_dimensions(scene: dict[str, Any], kwargs: dict[str, Any]) -> tuple[int, int]:
+    width = _positive_int(kwargs.get("target_width") or scene.get("target_width") or scene.get("render_width"), TARGET_WIDTH)
+    height = _positive_int(kwargs.get("target_height") or scene.get("target_height") or scene.get("render_height"), TARGET_HEIGHT)
+    orientation = str(
+        kwargs.get("orientation")
+        or scene.get("orientation")
+        or scene.get("render_orientation")
+        or scene.get("aspect_ratio")
+        or scene.get("render_aspect_ratio")
+        or ""
+    ).strip().lower()
+    if (orientation in {"portrait", "vertical", "9:16"} or "9:16" in orientation) and height <= width:
+        return 1080, 1920
+    if (orientation in {"landscape", "horizontal", "16:9"} or "16:9" in orientation) and width <= height:
+        return TARGET_WIDTH, TARGET_HEIGHT
+    return width, height
+
+
+def _image_quality() -> str:
+    return (os.getenv("LOCAL_EXPLAINER_IMAGE_QUALITY") or "high").strip() or "high"
+
+
+def _generate_image_openai(
+    *,
+    prompt: str,
+    output_path: Path,
+    model: str,
+    target_width: int,
+    target_height: int,
+) -> Path:
+    """Generate one still via the OpenAI gpt-image API and write it to output_path.
+
+    This mirrors the deterministic, file-based approach used by the sibling cathode
+    pipeline (scripts/generate_openai_image.py): call the image API directly and write
+    the returned PNG to an exact path. It replaces the previous Codex native-image-tool
+    path, which returned images only as in-session artifacts with no filesystem handle
+    and so failed non-deterministically during headless renders.
+    """
+    import base64
+
+    import openai
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    portrait = int(target_height) > int(target_width)
+    orientation_hint = (
+        "Vertical 9:16 portrait composition; keep the subject and any text centered and within mobile safe zones.\n"
+        if portrait
+        else "Horizontal 16:9 landscape composition.\n"
+    )
+    full_prompt = f"{orientation_hint}{prompt.strip()}"
+    # gpt-image only accepts a fixed set of sizes; pick by orientation, then normalize to
+    # the exact scene target. A non-standard size raises, so we fall back to "auto".
+    size = "1024x1536" if portrait else "1536x1024"
+    quality = _image_quality()
+    # The clinic routes text models through OpenRouter via OPENAI_BASE_URL, but OpenRouter
+    # does not serve the image endpoint — image generation must hit the real OpenAI API.
+    base_url = (os.getenv("OPENAI_IMAGE_BASE_URL") or "https://api.openai.com/v1").strip()
+    api_key = (os.getenv("OPENAI_IMAGE_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    resolved_model = (os.getenv("LOCAL_EXPLAINER_IMAGE_MODEL") or "gpt-image-1").strip() or "gpt-image-1"
+
+    client = openai.OpenAI(base_url=base_url, api_key=api_key) if api_key else openai.OpenAI(base_url=base_url)
+
+    def _call(size_value: str):
+        return client.images.generate(
+            model=resolved_model,
+            prompt=full_prompt,
+            size=size_value,
+            quality=quality,
+            output_format="png",
+        )
+
+    _log(f"Generating {output_path.name} via {resolved_model} at {size} (quality={quality})")
+    try:
+        result = _call(size)
+    except Exception as exc:  # a rejected size falls back to model-chosen dimensions
+        _log(f"Size {size} rejected ({type(exc).__name__}); retrying at auto")
+        result = _call("auto")
+
+    payload = result.data[0].b64_json if getattr(result, "data", None) else None
+    if not payload:
+        raise RuntimeError(f"OpenAI returned no image payload for {output_path.name}")
+    output_path.write_bytes(base64.b64decode(payload))
+
+    _ensure_png(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
     return output_path
 
 
@@ -228,24 +350,22 @@ def generate_image(
     *,
     title: str = "",
     runner_model: str | None = None,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
     **_: Any,
 ) -> Path:
-    """Generate a still image through local Codex native image generation."""
+    """Generate a still image via the OpenAI gpt-image API (deterministic, file-based)."""
     output_path = Path(output_path)
     prompt = str(prompt or "").strip()
     if not prompt:
         raise ValueError("Image generation requires a non-empty prompt")
 
-    codex_prompt = build_codex_image_prompt(
+    return _generate_image_openai(
         prompt=prompt,
         output_path=output_path,
-        image_model=str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL,
-        title=title,
-    )
-    return _run_codex_exec_image(
-        prompt=codex_prompt,
-        output_path=output_path,
-        runner_model=runner_model,
+        model=str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL,
+        target_width=target_width,
+        target_height=target_height,
     )
 
 
@@ -520,6 +640,7 @@ def generate_scene_image(
     output_path = images_dir / f"scene_{scene_id:03d}.png"
 
     visual_prompt = str(scene.get("visual_prompt") or "").strip()
+    target_width, target_height = _scene_target_dimensions(scene, kwargs)
     if visual_prompt:
         result = generate_image(
             visual_prompt,
@@ -527,6 +648,8 @@ def generate_scene_image(
             model=model or DEFAULT_IMAGE_GEN_MODEL,
             title=str(scene.get("title") or ""),
             runner_model=str(kwargs.get("runner_model") or "").strip() or None,
+            target_width=target_width,
+            target_height=target_height,
         )
         scene["image_path"] = str(result)
         return result
