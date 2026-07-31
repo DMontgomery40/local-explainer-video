@@ -203,11 +203,12 @@ def _run_codex_exec_image(
     jsonl_path = log_dir / f"{stem}.codex.jsonl"
     final_message_path = log_dir / f"{stem}.final.txt"
 
+    # Honor the user's codex config (auth, default model, image tool); running with
+    # --ignore-user-config made codex fall back to a model the account rejects.
     cmd = [
         _codex_binary(),
         "exec",
         "--json",
-        "--ignore-user-config",
         "-C",
         str(_repo_root()),
         "-s",
@@ -354,16 +355,43 @@ def generate_image(
     target_height: int = TARGET_HEIGHT,
     **_: Any,
 ) -> Path:
-    """Generate a still image via the OpenAI gpt-image API (deterministic, file-based)."""
+    """Generate a still image, preferring the local Codex CLI (subscription-covered).
+
+    The Codex native image tool is the primary path; the metered OpenAI gpt-image
+    API is only a fallback when Codex is unavailable or a codex run fails. Set
+    LOCAL_EXPLAINER_IMAGE_PROVIDER=openai to force the API path explicitly.
+    """
     output_path = Path(output_path)
     prompt = str(prompt or "").strip()
     if not prompt:
         raise ValueError("Image generation requires a non-empty prompt")
 
+    resolved_model = str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL
+    provider = (os.getenv("LOCAL_EXPLAINER_IMAGE_PROVIDER") or "codex").strip().lower()
+    if provider != "openai" and _codex_cli_available():
+        codex_prompt = build_codex_image_prompt(
+            prompt=prompt,
+            output_path=output_path,
+            image_model=resolved_model,
+            title=title,
+            target_width=target_width,
+            target_height=target_height,
+        )
+        try:
+            return _run_codex_exec_image(
+                prompt=codex_prompt,
+                output_path=output_path,
+                runner_model=runner_model,
+                target_width=target_width,
+                target_height=target_height,
+            )
+        except RuntimeError as exc:
+            _log(f"Codex image generation failed ({exc}); falling back to the OpenAI image API")
+
     return _generate_image_openai(
         prompt=prompt,
         output_path=output_path,
-        model=str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL,
+        model=resolved_model,
         target_width=target_width,
         target_height=target_height,
     )
