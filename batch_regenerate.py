@@ -5,7 +5,7 @@ Batch regenerate videos for all valid patient ID projects.
 Usage:
     python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...]
 
-Valid patient ID format: XX_MM-DD-YYYY[_N] (e.g., BT_12-11-1963)
+Valid patient ID format: XX_MM-DD-YYYY[_N] (e.g., ZZ_01-01-1900)
 """
 
 import argparse

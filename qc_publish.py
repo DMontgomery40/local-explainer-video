@@ -40,7 +40,7 @@ def main() -> int:
         required=True,
         help="Project folder name under ./projects/ (or an absolute/relative path to a project dir).",
     )
-    parser.add_argument("--patient-id", default="", help="Override the clinic patient id (XX_MM-DD-YYYY, e.g. BT_12-11-1963).")
+    parser.add_argument("--patient-id", default="", help="Override the clinic patient id (XX_MM-DD-YYYY, e.g. ZZ_01-01-1900).")
     parser.add_argument("--qeeg-dir", default=str(default_qeeg_analysis_dir()), help="Path to qEEG-analysis repo.")
     parser.add_argument("--backend-url", default=default_qeeg_backend_url(), help="qEEG Council backend URL.")
     parser.add_argument("--cliproxy-url", default=default_cliproxy_url(), help="CLIProxyAPI base URL.")
@@ -70,7 +70,7 @@ def main() -> int:
     if not patient_id:
         raise SystemExit(
             "Unable to read a clinic patient id from the project name; "
-            "provide --patient-id XX_MM-DD-YYYY (e.g. BT_12-11-1963)."
+            "provide --patient-id XX_MM-DD-YYYY (e.g. ZZ_01-01-1900)."
         )
 
     plan = load_plan(project_dir)
