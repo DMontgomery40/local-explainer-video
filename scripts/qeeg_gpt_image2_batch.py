@@ -42,23 +42,10 @@ if str(REPO_ROOT) not in sys.path:
 # suffix rule, so the same folder name resolved to a patient in one and to
 # nothing in the other.
 from core.patient_id import infer_patient_id, is_patient_id  # noqa: E402
+from core.qeeg_env import default_qeeg_analysis_dir  # noqa: E402
 HOME_DIR = Path.home()
 LOCAL_EXPLAINER_ROOT = REPO_ROOT
 CATHODE_ROOT = (REPO_ROOT / "../cathode").resolve()
-
-
-def default_qeeg_analysis_dir() -> Path:
-    """Where the qEEG engine lives — the same answer core.qc_publish gives.
-
-    Resolved the same way in both places on purpose: this script publishes into
-    the engine's portal folder and then asks the engine to sync it, so a run
-    that guessed a different installation than the publisher would push videos
-    into one clinic's folder and sync another's.
-    """
-    env = os.getenv("QEEG_ANALYSIS_DIR")
-    if env:
-        return Path(env).expanduser().resolve()
-    return (REPO_ROOT / "../qEEG-analysis").resolve()
 
 
 QEEG_ANALYSIS_ROOT = default_qeeg_analysis_dir()

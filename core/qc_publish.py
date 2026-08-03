@@ -44,6 +44,11 @@ from core.video_assembly import assemble_video
 
 # The one reader for the clinic patient ID, shared with the standalone batch
 # scripts so there is no second copy to drift.
+from core.qeeg_env import (  # noqa: F401  (re-exported for callers)
+    default_cliproxy_url,
+    default_qeeg_analysis_dir,
+    default_qeeg_backend_url,
+)
 from core.patient_id import (  # noqa: F401  (re-exported for callers)
     PATIENT_ID_RE as _PATIENT_ID_RE,
     infer_patient_id,
@@ -131,21 +136,6 @@ def image_change_metrics(
 def _repo_root() -> Path:
     # core/qc_publish.py -> core/ -> repo root
     return Path(__file__).resolve().parents[1]
-
-
-def default_qeeg_analysis_dir() -> Path:
-    env = os.getenv("QEEG_ANALYSIS_DIR")
-    if env:
-        return Path(env).expanduser().resolve()
-    return (_repo_root().parent / "qEEG-analysis").resolve()
-
-
-def default_qeeg_backend_url() -> str:
-    return os.getenv("QEEG_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-
-
-def default_cliproxy_url() -> str:
-    return os.getenv("CLIPROXY_BASE_URL", "http://127.0.0.1:8317").rstrip("/")
 
 
 def default_cliproxy_api_key() -> str:

@@ -313,7 +313,7 @@ def test_the_engine_directory_is_read_from_the_same_env_var_as_the_publisher(
     engine to sync it. If it resolved a different installation than
     core.qc_publish does, videos would land in one clinic's folder and the sync
     would push another's."""
-    from core.qc_publish import default_qeeg_analysis_dir as publisher_default
+    from core.qeeg_env import default_qeeg_analysis_dir as publisher_default
 
     elsewhere = tmp_path / "other-qEEG"
     elsewhere.mkdir()
