@@ -55,12 +55,34 @@ def test_infer_patient_id_refuses_what_is_not_a_clinic_id():
     assert infer_patient_id("") is None
 
 
-def test_batch_regenerate_selects_projects_by_the_same_clinic_id():
+def test_batch_regenerate_selects_projects_through_the_shared_reader(tmp_path, capsys):
     """Both entry points have to agree on what a patient project looks like, or
-    a render reachable from one is invisible to the other."""
-    from batch_regenerate import PATIENT_ID_PATTERN
+    a render reachable from one is invisible to the other — so batch_regenerate
+    uses the same reader rather than its own copy of the pattern."""
+    import batch_regenerate
 
-    assert PATIENT_ID_PATTERN.match("BT_12-11-1963")
-    assert PATIENT_ID_PATTERN.match("DK_08-10-1989_10")
-    assert not PATIENT_ID_PATTERN.match("12-11-1963-0")
-    assert not PATIENT_ID_PATTERN.match("BT_12-11-1963_1")
+    projects = tmp_path / "projects"
+    for name in ("BT_12-11-1963", "DK_08-10-1989_10", "12-11-1963-0"):
+        (projects / name).mkdir(parents=True)
+        (projects / name / "plan.json").write_text("{}")
+    batch_regenerate.PROJECTS_DIR = projects
+
+    found = [p.name for p in batch_regenerate.get_valid_patient_projects()]
+
+    assert found == ["BT_12-11-1963", "DK_08-10-1989_10"]
+    # The legacy-named project is named, not silently dropped.
+    assert "skipping 12-11-1963-0" in capsys.readouterr().out
+
+
+def test_split_project_name_separates_patient_from_repeat_project_and_video():
+    """`_2` belongs to the patient. `__02` is a repeat project for that same
+    patient, and `_v4` a video revision — neither changes who this is."""
+    from core.qc_publish import split_project_name
+
+    assert split_project_name("BT_12-11-1963_2__02") == ("BT_12-11-1963_2", 2, None)
+    assert split_project_name("BT_12-11-1963__02") == ("BT_12-11-1963", 2, None)
+    assert split_project_name("BT_12-11-1963_2__02__03") == ("BT_12-11-1963_2", 3, None)
+    assert split_project_name("DK_08-10-1989_10_v4") == ("DK_08-10-1989_10", None, 4)
+    assert split_project_name("BT_12-11-1963") == ("BT_12-11-1963", None, None)
+    # A legacy name yields no patient, but still reports what it could strip.
+    assert split_project_name("02-25-1988-0__02")[0] is None

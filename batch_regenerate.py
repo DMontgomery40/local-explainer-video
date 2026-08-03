@@ -5,7 +5,7 @@ Batch regenerate videos for all valid patient ID projects.
 Usage:
     python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...]
 
-Valid patient ID format: MM-DD-YYYY-N (e.g., 01-01-1991-0)
+Valid patient ID format: XX_MM-DD-YYYY[_N] (e.g., BT_12-11-1963)
 """
 
 import argparse
@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from core.director import generate_storyboard
+from core.qc_publish import infer_patient_id
 from core.local_planner import normalize_storyboard_runner
 from core.image_gen import generate_scene_image
 from core.voice_gen import (
@@ -42,18 +43,23 @@ from core.video_assembly import assemble_video
 PROJECTS_DIR = Path(__file__).parent / "projects"
 ARGS: dict = {}
 
-# The clinic patient ID: two initials, the date of birth, and a collision
-# ordinal that starts at 2 — `BT_12-11-1963`, `BT_12-11-1963_10`.
-PATIENT_ID_PATTERN = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
-
-
 def get_valid_patient_projects() -> list[Path]:
-    """Find all projects with valid patient ID names that have plan.json."""
+    """Find all projects named for a patient that have plan.json.
+
+    A directory this cannot read a patient ID from is named and skipped rather
+    than dropped silently — legacy-named projects will sit here until the
+    clinic's cutover renames them, and a batch that quietly renders nothing is
+    the failure that hides them.
+    """
     projects = []
-    for p in PROJECTS_DIR.iterdir():
-        if p.is_dir() and PATIENT_ID_PATTERN.match(p.name):
-            if (p / "plan.json").exists():
-                projects.append(p)
+    for p in sorted(PROJECTS_DIR.iterdir()):
+        if not p.is_dir():
+            continue
+        if infer_patient_id(p.name) is None:
+            print(f"  skipping {p.name}: not a clinic patient ID")
+            continue
+        if (p / "plan.json").exists():
+            projects.append(p)
     return sorted(projects)
 
 

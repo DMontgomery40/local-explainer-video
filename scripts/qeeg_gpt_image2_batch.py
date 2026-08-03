@@ -15,7 +15,7 @@ native image generation. Everything else around it is deterministic and local:
 
 Example:
     python3.10 scripts/qeeg_gpt_image2_batch.py --dry-run
-    python3.10 scripts/qeeg_gpt_image2_batch.py --patients 10-31-2008-0
+    python3.10 scripts/qeeg_gpt_image2_batch.py --patients PL_10-31-2008
 """
 
 from __future__ import annotations
@@ -40,8 +40,12 @@ CATHODE_ROOT = (REPO_ROOT / "../cathode").resolve()
 QEEG_ANALYSIS_ROOT = (REPO_ROOT / "../qEEG-analysis").resolve()
 PORTAL_PATIENTS_DIR = QEEG_ANALYSIS_ROOT / "data" / "portal_patients"
 CODEX_GENERATED_IMAGES_ROOT = HOME_DIR / ".codex" / "generated_images"
-PATIENT_ID_RE = re.compile(r"^\d{2}-\d{2}-\d{4}-\d+$")
+# The clinic patient ID: two initials, the date of birth, and a collision
+# ordinal that starts at 2 — `BT_12-11-1963`, `BT_12-11-1963_10`.
+PATIENT_ID_RE = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
 VIDEO_VERSION_SUFFIX_RE = re.compile(r"([_ ]v\d+(?:\.\d+)?)$", re.IGNORECASE)
+# A repeat project for the same patient, zero-padded and able to stack.
+PROJECT_VERSION_SUFFIX_RE = re.compile(r"__\d+$")
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 TARGET_ASPECT_RATIO = "16:9"
@@ -91,10 +95,22 @@ def is_patient_id(value: str) -> bool:
 
 
 def infer_patient_id(project_name: str) -> str | None:
+    """Read the clinic patient ID off a project folder name.
+
+    Splitting on the first ``__`` would cut `BT_12-11-1963_2__02` correctly but
+    also cut a patient whose ID is followed by nothing — so strip the repeat
+    project suffix and the video suffix from the end instead, and only then ask
+    whether what remains is an ID. `_2` belongs to the patient; `__02` and `_v4`
+    do not.
+    """
     if not project_name:
         return None
-    base = project_name.split("__", 1)[0]
-    return base if is_patient_id(base) else None
+    remaining = project_name.strip()
+    while (match := PROJECT_VERSION_SUFFIX_RE.search(remaining)) is not None:
+        remaining = remaining[: match.start()]
+    if (match := VIDEO_VERSION_SUFFIX_RE.search(remaining)) is not None:
+        remaining = remaining[: match.start()]
+    return remaining if is_patient_id(remaining) else None
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -317,11 +333,17 @@ def discover_latest_prompt_projects(
     local_explainer_root: Path = LOCAL_EXPLAINER_ROOT,
     cathode_root: Path = CATHODE_ROOT,
 ) -> list[ProjectCandidate]:
-    portal_entries = sorted(
-        entry
-        for entry in portal_patients_dir.iterdir()
-        if entry.is_dir() and is_patient_id(entry.name)
-    )
+    portal_entries = []
+    for entry in sorted(portal_patients_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not is_patient_id(entry.name):
+            # Name it rather than dropping it. A portal folder this cannot read
+            # is a patient who silently gets no video, and legacy-named folders
+            # will sit here until the clinic's cutover renames them.
+            print(f"  skipping portal folder {entry.name}: not a clinic patient ID")
+            continue
+        portal_entries.append(entry)
     per_repo: dict[str, list[ProjectCandidate]] = {}
     for repo_candidates in (
         discover_repo_candidates("local-explainer-video", local_explainer_root),
