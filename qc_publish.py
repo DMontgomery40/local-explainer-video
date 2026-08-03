@@ -3,7 +3,7 @@
 CLI entrypoint for the QC + publish pipeline.
 
 Example:
-  python3.10 qc_publish.py --project 09-05-1954-0
+  python3.10 qc_publish.py --project ZZ_01-01-1900
 """
 
 from __future__ import annotations

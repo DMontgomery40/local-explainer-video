@@ -62,7 +62,7 @@ clinician portal sync folder.
   Enable auto-fix explicitly in the UI or with `--auto-fix-images`.
 
 **How it works**
-1. Loads qEEG Council ground truth for the patient ID (`MM-DD-YYYY-N`) from `qEEG-analysis/data/app.db`
+1. Loads qEEG Council ground truth for the patient ID (`XX_MM-DD-YYYY`) from `qEEG-analysis/data/app.db`
 2. Runs Opus narrative QC on `plan.json` (may apply high-confidence string replacements; blocks on critical issues)
 3. Runs Gemini visual QC on each rendered slide PNG and blocks if issues are found (optionally applies fixes via image edit)
 4. Re-renders the MP4, then publishes it to:
@@ -78,8 +78,8 @@ clinician portal sync folder.
 
 Run it:
 - Streamlit: Step 3 → **QC + Publish**
-- CLI (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
-- CLI (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
+- CLI (check-only): `python3.10 qc_publish.py --project ZZ_01-01-1900`
+- CLI (auto-fix images): `python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images`
 - Batch: `python3.10 qc_publish_batch.py` (latest version per patient, valid patient IDs only)
 
 ## Image Action Gotchas (Generate vs Edit)

@@ -206,9 +206,9 @@ Notes:
 Or run it from the CLI:
 
 ```bash
-python3.10 qc_publish.py --project 09-23-1982-0            # check-only
-python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images
-python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images --image-edit-model qwen-image-edit-max
+python3.10 qc_publish.py --project ZZ_01-01-1900            # check-only
+python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images
+python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images --image-edit-model qwen-image-edit-max
 ```
 
 Batch mode (latest version per patient, valid patient IDs only):

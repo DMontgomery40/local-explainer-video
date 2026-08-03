@@ -308,7 +308,7 @@ def main():
     if not projects:
         print("No valid patient ID projects found.")
         print(f"Looking in: {PROJECTS_DIR}")
-        print("Valid format: MM-DD-YYYY-N (e.g., 01-01-1991-0)")
+        print("Valid format: XX_MM-DD-YYYY[_N] (e.g., ZZ_01-01-1900)")
         sys.exit(1)
 
     print(f"Found {len(projects)} project(s) to process:")
