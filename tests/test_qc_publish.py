@@ -86,3 +86,33 @@ def test_split_project_name_separates_patient_from_repeat_project_and_video():
     assert split_project_name("BT_12-11-1963") == ("BT_12-11-1963", None, None)
     # A legacy name yields no patient, but still reports what it could strip.
     assert split_project_name("02-25-1988-0__02")[0] is None
+
+
+def test_every_entry_point_reads_the_patient_id_through_one_module():
+    """Two readers is how this started: the batch script's copy had already
+    drifted to a case-insensitive, decimal-tolerant video suffix, so
+    `BT_12-11-1963_V4` resolved to a patient in one and to nothing in the
+    other. They are the same function object now, so they cannot disagree."""
+    import importlib.util
+    from pathlib import Path
+
+    from core import patient_id as shared
+    from core.qc_publish import infer_patient_id as qc_reader
+    import batch_regenerate
+
+    import sys
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "qeeg_gpt_image2_batch.py"
+    spec = importlib.util.spec_from_file_location("batch_mod", script)
+    batch_mod = importlib.util.module_from_spec(spec)
+    # Its dataclasses resolve their annotations through sys.modules.
+    sys.modules[spec.name] = batch_mod
+    spec.loader.exec_module(batch_mod)
+
+    assert qc_reader is shared.infer_patient_id
+    assert batch_regenerate.infer_patient_id is shared.infer_patient_id
+    assert batch_mod.infer_patient_id is shared.infer_patient_id
+
+    # And the case the two copies actually disagreed on now has one answer.
+    for name in ("BT_12-11-1963_V4", "BT_12-11-1963_v4.1"):
+        assert qc_reader(name) == batch_mod.infer_patient_id(name) == "BT_12-11-1963"

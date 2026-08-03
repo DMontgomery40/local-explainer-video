@@ -34,6 +34,14 @@ from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# One reader for the clinic ID, shared with core/qc_publish. Two copies is
+# how this started: the duplicate had already drifted to a different video
+# suffix rule, so the same folder name resolved to a patient in one and to
+# nothing in the other.
+from core.patient_id import infer_patient_id, is_patient_id  # noqa: E402
 HOME_DIR = Path.home()
 LOCAL_EXPLAINER_ROOT = REPO_ROOT
 CATHODE_ROOT = (REPO_ROOT / "../cathode").resolve()
@@ -56,12 +64,9 @@ def default_qeeg_analysis_dir() -> Path:
 QEEG_ANALYSIS_ROOT = default_qeeg_analysis_dir()
 PORTAL_PATIENTS_DIR = QEEG_ANALYSIS_ROOT / "data" / "portal_patients"
 CODEX_GENERATED_IMAGES_ROOT = HOME_DIR / ".codex" / "generated_images"
-# The clinic patient ID: two initials, the date of birth, and a collision
-# ordinal that starts at 2 — `BT_12-11-1963`, `BT_12-11-1963_10`.
-PATIENT_ID_RE = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
+# Only used to normalise a video filename stem; the patient ID itself is read
+# by core.patient_id, which this script imports rather than reimplements.
 VIDEO_VERSION_SUFFIX_RE = re.compile(r"([_ ]v\d+(?:\.\d+)?)$", re.IGNORECASE)
-# A repeat project for the same patient, zero-padded and able to stack.
-PROJECT_VERSION_SUFFIX_RE = re.compile(r"__\d+$")
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 TARGET_ASPECT_RATIO = "16:9"
@@ -104,29 +109,6 @@ def _iso_from_timestamp(ts: float) -> str | None:
     if ts <= 0:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def is_patient_id(value: str) -> bool:
-    return bool(PATIENT_ID_RE.fullmatch((value or "").strip()))
-
-
-def infer_patient_id(project_name: str) -> str | None:
-    """Read the clinic patient ID off a project folder name.
-
-    Splitting on the first ``__`` would cut `BT_12-11-1963_2__02` correctly but
-    also cut a patient whose ID is followed by nothing — so strip the repeat
-    project suffix and the video suffix from the end instead, and only then ask
-    whether what remains is an ID. `_2` belongs to the patient; `__02` and `_v4`
-    do not.
-    """
-    if not project_name:
-        return None
-    remaining = project_name.strip()
-    while (match := PROJECT_VERSION_SUFFIX_RE.search(remaining)) is not None:
-        remaining = remaining[: match.start()]
-    if (match := VIDEO_VERSION_SUFFIX_RE.search(remaining)) is not None:
-        remaining = remaining[: match.start()]
-    return remaining if is_patient_id(remaining) else None
 
 
 def load_json(path: Path) -> dict[str, Any]:

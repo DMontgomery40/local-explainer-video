@@ -42,54 +42,14 @@ from core.voice_gen import (
 from core.video_assembly import assemble_video
 
 
-# The clinic patient ID: two initials, the date of birth, and a collision
-# ordinal that starts at 2 — `BT_12-11-1963`, `BT_12-11-1963_10`. This is the
-# only ID the qEEG portal routes on; past reading it off a folder name the
-# renderer treats it as opaque.
-_PATIENT_ID_RE = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
-
-# Three different things end a project folder name with an underscore and a
-# number, and only one of them belongs to the patient:
-#   `_2`    the patient's collision ordinal — part of the ID
-#   `__02`  a repeat project for the same patient, zero-padded, may stack
-#   `_v4`   a video revision
-# Widening the ID pattern to swallow `__NN` would make `BT_12-11-1963_2` and
-# `BT_12-11-1963__02` indistinguishable — a different patient versus a second
-# project for the same one. So strip the suffixes that are not the patient's,
-# outermost first, and only then ask whether what remains is an ID.
-_PROJECT_VERSION_SUFFIX_RE = re.compile(r"__(?P<version>\d+)$")
-_VIDEO_VERSION_SUFFIX_RE = re.compile(r"[_ ]v(?P<version>\d+)$")
-
-
-def split_project_name(project_name: str) -> tuple[str | None, int | None, int | None]:
-    """Separate a project folder name into patient, project version, video version.
-
-    ``BT_12-11-1963_2__02`` is the second project for patient
-    ``BT_12-11-1963_2`` — not patient ``BT_12-11-1963`` and not project 2 of
-    anyone else. Returns ``(None, …)`` when what is left is not a clinic ID.
-    """
-    remaining = (project_name or "").strip()
-
-    project_version: int | None = None
-    # Repeat projects stack (`__02__03`), so peel every one of them.
-    while (match := _PROJECT_VERSION_SUFFIX_RE.search(remaining)) is not None:
-        if project_version is None:
-            project_version = int(match.group("version"))
-        remaining = remaining[: match.start()]
-
-    video_version: int | None = None
-    if (match := _VIDEO_VERSION_SUFFIX_RE.search(remaining)) is not None:
-        video_version = int(match.group("version"))
-        remaining = remaining[: match.start()]
-
-    if not _PATIENT_ID_RE.match(remaining):
-        return None, project_version, video_version
-    return remaining, project_version, video_version
-
-
-def infer_patient_id(project_name: str) -> str | None:
-    """Read the clinic patient ID off a project folder name."""
-    return split_project_name(project_name)[0]
+# The one reader for the clinic patient ID, shared with the standalone batch
+# scripts so there is no second copy to drift.
+from core.patient_id import (  # noqa: F401  (re-exported for callers)
+    PATIENT_ID_RE as _PATIENT_ID_RE,
+    infer_patient_id,
+    is_patient_id,
+    split_project_name,
+)
 
 
 def extract_quoted_texts(prompt: str) -> list[str]:

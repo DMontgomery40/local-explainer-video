@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from core.director import generate_storyboard
-from core.qc_publish import infer_patient_id
+from core.patient_id import infer_patient_id
 from core.local_planner import normalize_storyboard_runner
 from core.image_gen import generate_scene_image
 from core.voice_gen import (
