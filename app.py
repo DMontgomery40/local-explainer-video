@@ -1308,7 +1308,7 @@ def render_step_3():
 
     guessed_patient_id = infer_patient_id(project_dir.name) if project_dir else None
     patient_id = st.text_input(
-        "Patient ID (MM-DD-YYYY-N)",
+        "Patient ID (XX_MM-DD-YYYY)",
         value=guessed_patient_id or "",
         help="Used to locate the latest qEEG Council run (Stage 4 consolidation + Stage 1 data pack).",
         key="qc_patient_id",
@@ -1372,7 +1372,7 @@ def render_step_3():
     run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
     if run_qc:
         if not patient_id.strip():
-            st.error("Enter a Patient ID (MM-DD-YYYY-N) to run QC.")
+            st.error("Enter a Patient ID (XX_MM-DD-YYYY) to run QC.")
             return
 
         status = st.empty()

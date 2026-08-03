@@ -3,7 +3,7 @@
 CLI entrypoint for the QC + publish pipeline.
 
 Example:
-  python3.10 qc_publish.py --project 09-05-1954-0
+  python3.10 qc_publish.py --project ZZ_01-01-1900
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def main() -> int:
         required=True,
         help="Project folder name under ./projects/ (or an absolute/relative path to a project dir).",
     )
-    parser.add_argument("--patient-id", default="", help="Override patient id (MM-DD-YYYY-N).")
+    parser.add_argument("--patient-id", default="", help="Override the clinic patient id (XX_MM-DD-YYYY, e.g. ZZ_01-01-1900).")
     parser.add_argument("--qeeg-dir", default=str(default_qeeg_analysis_dir()), help="Path to qEEG-analysis repo.")
     parser.add_argument("--backend-url", default=default_qeeg_backend_url(), help="qEEG Council backend URL.")
     parser.add_argument("--cliproxy-url", default=default_cliproxy_url(), help="CLIProxyAPI base URL.")
@@ -68,7 +68,10 @@ def main() -> int:
 
     patient_id = (args.patient_id or "").strip() or infer_patient_id(project_dir.name) or ""
     if not patient_id:
-        raise SystemExit("Unable to infer patient id; provide --patient-id MM-DD-YYYY-N")
+        raise SystemExit(
+            "Unable to read a clinic patient id from the project name; "
+            "provide --patient-id XX_MM-DD-YYYY (e.g. ZZ_01-01-1900)."
+        )
 
     plan = load_plan(project_dir)
     cfg = QCPublishConfig(

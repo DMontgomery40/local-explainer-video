@@ -35,8 +35,8 @@ If `../qEEG-analysis` exists on the same machine, Step 3 includes a **QC + Publi
 
 - Run app: `./start.sh`
 - Manual: `/opt/homebrew/bin/python3.10 -m streamlit run app.py`
-- CLI QC (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
-- CLI QC (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
+- CLI QC (check-only): `python3.10 qc_publish.py --project ZZ_01-01-1900`
+- CLI QC (auto-fix images): `python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images`
 - Batch (latest version per patient, valid patient IDs only): `python3.10 qc_publish_batch.py`
 
 ## Non-qEEG Hybrid Video Workflow

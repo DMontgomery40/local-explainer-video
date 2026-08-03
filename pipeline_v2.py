@@ -59,13 +59,15 @@ def _save_plan(project_dir: Path, plan: dict) -> None:
 
 
 def _infer_patient_id(project_dir: Path) -> str:
-    """Infer patient ID (MM-DD-YYYY-N) from project directory name."""
-    import re
-    name = project_dir.name
-    match = re.match(r"(\d{2}-\d{2}-\d{4}-\d+)", name)
-    if match:
-        return match.group(1)
-    raise ValueError(f"Cannot infer patient ID from directory name: {name}")
+    """Read the clinic patient ID off a project directory name."""
+    from core.qc_publish import infer_patient_id
+
+    patient_id = infer_patient_id(project_dir.name)
+    if patient_id is None:
+        raise ValueError(
+            f"Cannot read a clinic patient ID from directory name: {project_dir.name}"
+        )
+    return patient_id
 
 
 def run_pipeline(
