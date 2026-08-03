@@ -304,3 +304,24 @@ def test_a_portal_folder_it_cannot_read_is_named_not_dropped(tmp_path, capsys):
     )
 
     assert "skipping portal folder 12-11-1963-0" in capsys.readouterr().out
+
+
+def test_the_engine_directory_is_read_from_the_same_env_var_as_the_publisher(
+    tmp_path, monkeypatch
+):
+    """This script publishes into the engine's portal folder and then asks the
+    engine to sync it. If it resolved a different installation than
+    core.qc_publish does, videos would land in one clinic's folder and the sync
+    would push another's."""
+    from core.qc_publish import default_qeeg_analysis_dir as publisher_default
+
+    elsewhere = tmp_path / "other-qEEG"
+    elsewhere.mkdir()
+    monkeypatch.setenv("QEEG_ANALYSIS_DIR", str(elsewhere))
+    module = _load_module()
+
+    assert module.default_qeeg_analysis_dir() == elsewhere.resolve()
+    assert module.default_qeeg_analysis_dir() == publisher_default()
+
+    monkeypatch.delenv("QEEG_ANALYSIS_DIR")
+    assert module.default_qeeg_analysis_dir() == publisher_default()

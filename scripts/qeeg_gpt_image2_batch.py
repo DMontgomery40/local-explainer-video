@@ -37,7 +37,23 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 HOME_DIR = Path.home()
 LOCAL_EXPLAINER_ROOT = REPO_ROOT
 CATHODE_ROOT = (REPO_ROOT / "../cathode").resolve()
-QEEG_ANALYSIS_ROOT = (REPO_ROOT / "../qEEG-analysis").resolve()
+
+
+def default_qeeg_analysis_dir() -> Path:
+    """Where the qEEG engine lives — the same answer core.qc_publish gives.
+
+    Resolved the same way in both places on purpose: this script publishes into
+    the engine's portal folder and then asks the engine to sync it, so a run
+    that guessed a different installation than the publisher would push videos
+    into one clinic's folder and sync another's.
+    """
+    env = os.getenv("QEEG_ANALYSIS_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    return (REPO_ROOT / "../qEEG-analysis").resolve()
+
+
+QEEG_ANALYSIS_ROOT = default_qeeg_analysis_dir()
 PORTAL_PATIENTS_DIR = QEEG_ANALYSIS_ROOT / "data" / "portal_patients"
 CODEX_GENERATED_IMAGES_ROOT = HOME_DIR / ".codex" / "generated_images"
 # The clinic patient ID: two initials, the date of birth, and a collision
