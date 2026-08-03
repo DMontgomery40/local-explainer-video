@@ -42,8 +42,9 @@ from core.video_assembly import assemble_video
 PROJECTS_DIR = Path(__file__).parent / "projects"
 ARGS: dict = {}
 
-# Pattern for valid patient IDs: MM-DD-YYYY-N
-PATIENT_ID_PATTERN = re.compile(r"^\d{2}-\d{2}-\d{4}-\d+$")
+# The clinic patient ID: two initials, the date of birth, and a collision
+# ordinal that starts at 2 — `BT_12-11-1963`, `BT_12-11-1963_10`.
+PATIENT_ID_PATTERN = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
 
 
 def get_valid_patient_projects() -> list[Path]:

@@ -42,12 +42,18 @@ from core.voice_gen import (
 from core.video_assembly import assemble_video
 
 
-_PATIENT_ID_RE = re.compile(r"^(?P<mm>\d{2})-(?P<dd>\d{2})-(?P<yyyy>\d{4})-(?P<n>\d+)$")
-_PATIENT_ID_PREFIX_RE = re.compile(r"^(?P<pid>\d{2}-\d{2}-\d{4}-\d+)(?:__\d+)?$")
+# The clinic patient ID: two initials, the date of birth, and a collision
+# ordinal that starts at 2 (`BT_12-11-1963`, `BT_12-11-1963_10`). This is the
+# only ID the qEEG portal routes on; the renderer treats it as opaque beyond
+# recognizing it in a project folder name.
+_PATIENT_ID_RE = re.compile(r"^[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?$")
+_PATIENT_ID_PREFIX_RE = re.compile(
+    r"^(?P<pid>[A-Z]{2}_\d{2}-\d{2}-\d{4}(?:_(?:[2-9]|[1-9]\d+))?)(?:__\d+)?$"
+)
 
 
 def infer_patient_id(project_name: str) -> str | None:
-    """Infer MM-DD-YYYY-N from a project folder name (supports __02 suffix)."""
+    """Read the clinic patient ID off a project folder name (``__02`` suffix ok)."""
     raw = (project_name or "").strip()
     m = _PATIENT_ID_PREFIX_RE.match(raw)
     if not m:
