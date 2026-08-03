@@ -37,7 +37,7 @@ def run_pipeline(
     *,
     input_text: str | None = None,
     tts_provider: str = "elevenlabs_replicate",
-    voice: str = "Antoni",
+    voice: str = "Bella",
     speed: float = 1.15,
     skip_tts: bool = False,
     skip_whisper: bool = False,
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Two-pass Remotion pipeline")
     parser.add_argument("project_dir", type=Path)
     parser.add_argument("--input-text", type=Path, default=None)
-    parser.add_argument("--voice", default="Antoni")
+    parser.add_argument("--voice", default="Bella")
     parser.add_argument("--tts-provider", default="elevenlabs_replicate")
     parser.add_argument("--speed", type=float, default=1.15)
     parser.add_argument("--skip-tts", action="store_true")

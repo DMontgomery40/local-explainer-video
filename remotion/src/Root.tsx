@@ -6,6 +6,7 @@ import { DynamicScene } from "./DynamicScene";
 import {
   CoverHookSchema,
   BrainRegionFocusSchema,
+  Brain3DSceneSchema,
   MetricCardSchema,
   MetricComparisonSchema,
   TimelineProgressionSchema,
@@ -18,6 +19,7 @@ import {
 import {
   CoverHook,
   BrainRegionFocus,
+  Brain3DScene,
   MetricCard,
   MetricComparison,
   TimelineProgression,
@@ -63,6 +65,67 @@ export const Root: React.FC = () => (
           { name: "Frontal", value: "+15%", status: "improved" },
           { name: "Parietal", value: "stable", status: "stable" },
         ],
+      }}
+    />
+    <Composition
+      id="brain-3d-scene"
+      component={Brain3DScene}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={DEFAULT_DURATION}
+      schema={Brain3DSceneSchema}
+      defaultProps={{
+        headline: "V-Shape Recovery Across Six Sites",
+        viewAngle: "topdown",
+        regions: [
+          { name: "C3", value: "12.5→8.4→13.6 µV", status: "improved" },
+          { name: "Cz", value: "13.7→9.4→14.2 µV", status: "improved" },
+          { name: "C4", value: "11.9→6.6→12.8 µV", status: "improved" },
+          { name: "P3", value: "14.1→10.2→15.3 µV", status: "improved" },
+          { name: "Pz", value: "13.8→9.1→14.5 µV", status: "stable" },
+          { name: "Frontal", value: "+18% alpha", status: "improved" },
+        ],
+        rotateSpeed: 0,
+        accentColor: "#5eead4",
+      }}
+    />
+    <Composition
+      id="brain-3d-lateral"
+      component={Brain3DScene}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={DEFAULT_DURATION}
+      schema={Brain3DSceneSchema}
+      defaultProps={{
+        headline: "Lateral Brain View",
+        viewAngle: "lateral-left",
+        regions: [
+          { name: "Temporal", value: "Processing center", status: "improved" },
+          { name: "Frontal", value: "Executive function", status: "stable" },
+        ],
+        rotateSpeed: 8,
+        accentColor: "#5eead4",
+      }}
+    />
+    <Composition
+      id="brain-3d-frontal"
+      component={Brain3DScene}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={DEFAULT_DURATION}
+      schema={Brain3DSceneSchema}
+      defaultProps={{
+        headline: "Frontal Assessment",
+        viewAngle: "frontal",
+        regions: [
+          { name: "Fp1", value: "3.2 µV²", status: "improved" },
+          { name: "Fp2", value: "3.1 µV²", status: "improved" },
+          { name: "Fz", value: "4.8 µV²", status: "stable" },
+        ],
+        accentColor: "#5eead4",
       }}
     />
     <Composition

@@ -27,6 +27,9 @@ wheels/
 .installed.cfg
 *.egg
 .agents/
+remotion/node_modules/
+remotion/projects/
+
 
 # Virtual environments
 venv/

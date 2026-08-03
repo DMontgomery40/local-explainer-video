@@ -1234,7 +1234,7 @@ def render_step_3():
     st.divider()
 
     # Preview stats
-    duration = get_video_duration(scenes)
+    duration = get_video_duration(scenes, project_dir)
     st.write(f"**Scenes:** {len(scenes)}")
     st.write(f"**Estimated Duration:** {duration:.1f} seconds ({duration/60:.1f} minutes)")
 

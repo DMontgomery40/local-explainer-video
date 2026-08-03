@@ -17,7 +17,22 @@ TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 
 
-def _ensure_dimensions(clip: ImageClip, scene_id: int = 0) -> ImageClip:
+def _resolve_project_path(project_dir: Path, raw_path: str | Path | None) -> Path | None:
+    """Resolve scene media paths relative to the project directory."""
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = Path(project_dir) / path
+    return path
+
+
+def _ensure_dimensions(
+    clip: ImageClip,
+    scene_id: int = 0,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
+) -> ImageClip:
     """
     Resize clip to target dimensions if mismatched.
 
@@ -25,9 +40,9 @@ def _ensure_dimensions(clip: ImageClip, scene_id: int = 0) -> ImageClip:
     (e.g., edited images returning different sizes).
     """
     w, h = clip.size
-    if w != TARGET_WIDTH or h != TARGET_HEIGHT:
-        print(f"  Scene {scene_id}: resizing {w}x{h} -> {TARGET_WIDTH}x{TARGET_HEIGHT}")
-        return clip.resized((TARGET_WIDTH, TARGET_HEIGHT))
+    if w != target_width or h != target_height:
+        print(f"  Scene {scene_id}: resizing {w}x{h} -> {target_width}x{target_height}")
+        return clip.resized((target_width, target_height))
     return clip
 
 
@@ -71,6 +86,8 @@ def assemble_video(
     output_filename: str = "final_video.mp4",
     fps: int = 24,
     default_duration: float = 5.0,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
 ) -> Path:
     """
     Assemble scenes into a final video.
@@ -97,20 +114,20 @@ def assemble_video(
 
     try:
         for i, scene in enumerate(scenes):
-            image_path = scene.get("image_path")
-            audio_path = scene.get("audio_path")
+            image_path = _resolve_project_path(project_dir, scene.get("image_path"))
+            audio_path = _resolve_project_path(project_dir, scene.get("audio_path"))
 
             # Skip scenes without images
-            if not image_path or not Path(image_path).exists():
+            if not image_path or not image_path.exists():
                 print(f"Skipping scene {scene.get('id', i)}: no image")
                 continue
 
             # Create image clip and ensure correct dimensions
             image_clip = ImageClip(str(image_path))
-            image_clip = _ensure_dimensions(image_clip, scene.get('id', i))
+            image_clip = _ensure_dimensions(image_clip, scene.get('id', i), target_width, target_height)
 
             # Add audio if available
-            if audio_path and Path(audio_path).exists():
+            if audio_path and audio_path.exists():
                 audio_clip = AudioFileClip(str(audio_path))
                 audio_clips.append(audio_clip)  # Keep reference for cleanup
                 duration = audio_clip.duration
@@ -181,10 +198,10 @@ def preview_scene(
     """
     project_dir = Path(project_dir)
 
-    image_path = scene.get("image_path")
-    audio_path = scene.get("audio_path")
+    image_path = _resolve_project_path(project_dir, scene.get("image_path"))
+    audio_path = _resolve_project_path(project_dir, scene.get("audio_path"))
 
-    if not image_path or not Path(image_path).exists():
+    if not image_path or not image_path.exists():
         return None
 
     scene_id = scene.get("id", 0)
@@ -202,7 +219,7 @@ def preview_scene(
         image_clip = ImageClip(str(image_path))
         image_clip = _ensure_dimensions(image_clip, scene_id)
 
-        if audio_path and Path(audio_path).exists():
+        if audio_path and audio_path.exists():
             audio_clip = AudioFileClip(str(audio_path))
             image_clip = image_clip.with_duration(audio_clip.duration)
             image_clip = image_clip.with_audio(audio_clip)
@@ -236,12 +253,13 @@ def preview_scene(
     return output_path
 
 
-def get_video_duration(scenes: list[dict]) -> float:
+def get_video_duration(scenes: list[dict], project_dir: Path | None = None) -> float:
     """
     Calculate total video duration from scenes.
 
     Args:
         scenes: List of scene dictionaries
+        project_dir: Project directory used to resolve relative audio paths
 
     Returns:
         Total duration in seconds
@@ -249,9 +267,9 @@ def get_video_duration(scenes: list[dict]) -> float:
     total_duration = 0.0
 
     for scene in scenes:
-        audio_path = scene.get("audio_path")
+        audio_path = _resolve_project_path(project_dir or Path("."), scene.get("audio_path"))
 
-        if audio_path and Path(audio_path).exists():
+        if audio_path and audio_path.exists():
             audio_clip = AudioFileClip(str(audio_path))
             try:
                 total_duration += audio_clip.duration

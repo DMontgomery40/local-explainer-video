@@ -75,12 +75,23 @@ REPLICATE_API_TOKEN=r8_...     # Required: for image generation
 DASHSCOPE_API_KEY=sk-...       # Optional: for DashScope Qwen image editing (qwen-image-edit-max/plus)
 DASHSCOPE_REGION=SINGAPORE     # Optional: SINGAPORE (default) or BEIJING (keys/endpoints are region-specific)
 ELEVENLABS_API_KEY=...         # Optional: required only if you select ElevenLabs TTS
+REMOTION_SKILL_ID=skill_...    # Optional: attach your Anthropic custom Remotion skill in director.py
+REMOTION_SKILL_VERSION=latest  # Optional: pin a specific skill version instead of latest
 
 # Optional overrides for which model is used when editing existing images (UI "Edit Image" + QC auto-fix)
 IMAGE_EDIT_MODEL=qwen-image-edit-max   # or: qwen/qwen-image-edit-2511
 ```
 
 You need at least one of OpenAI or Anthropic for the director agent.
+
+If you want the direct Claude API path to have access to your full Anthropic-hosted Remotion custom skill, set `REMOTION_SKILL_ID` to the remote `skill_...` id from Anthropic. A local Codex/Claude skill install helps us follow the right API pattern, but the API call itself still needs the remote Anthropic custom skill id.
+
+To list existing custom skills or upload a local skill directory and print the resulting `skill_...` id:
+
+```bash
+python3 scripts/anthropic_skills.py list
+python3 scripts/anthropic_skills.py create .claude/skills/remotion-best-practices --display-title "Remotion Best Practices"
+```
 
 ### 4. Run
 
