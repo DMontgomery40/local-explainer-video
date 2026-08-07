@@ -24,6 +24,26 @@ TARGET_ASPECT_RATIO = "16:9"
 TARGET_SIZE_DASHSCOPE = f"{TARGET_WIDTH}*{TARGET_HEIGHT}"
 DEFAULT_IMAGE_GEN_MODEL = "gpt-image-2"
 
+# The one rule that stops prompt text becoming picture text.
+#
+# A visual prompt ends with art direction — "premium medical infographic, luminous
+# and precise". When that trails a corner-label instruction with nothing closing the
+# label, the image model reads the whole tail as the caption to paint, and then
+# invents a brand emblem to sit beside it because the result reads like a logo
+# lockup. Fourteen of fourteen slides in AN_04-08-1986's explainer shipped that way:
+# the patient identifier followed by the style sentence, under a different made-up
+# crest each time. Nobody ever asked for either. The identifier alone is wanted and
+# useful; everything else on that label is a bug.
+#
+# Stated positively and applied to every image, this holds whatever the planner wrote.
+TEXT_DISCIPLINE = (
+    "Render as on-screen text only the words this prompt places inside quotation marks. "
+    "Words describing style, finish, quality or mood are art direction for how the picture "
+    "should look — express them in the artwork and never draw them as letters. "
+    "Draw only the logos, emblems, badges, crests or brand marks this prompt explicitly asks "
+    "for; invent none."
+)
+
 _DASHSCOPE_ENDPOINT_SINGAPORE = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 _DASHSCOPE_ENDPOINT_BEIJING = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 _replicate_client = None
@@ -176,6 +196,7 @@ def build_codex_image_prompt(
         f"- Fixed render constraints: {_render_constraint_text(target_width, target_height)}.\n"
         "- Use the existing prompt text as the core content prompt. Do not otherwise rewrite, summarize, or refine it.\n"
         "- Any quoted on-screen text or branded term must be rendered exactly and case-sensitively.\n"
+        f"- {TEXT_DISCIPLINE}\n"
         f"- Copy the generated PNG to {output_path}.\n"
         "- Do not modify any other repo files.\n"
         f"- After finishing, verify {output_path} exists and report its file size and dimensions.\n\n"
@@ -305,7 +326,7 @@ def _generate_image_openai(
         if portrait
         else "Horizontal 16:9 landscape composition.\n"
     )
-    full_prompt = f"{orientation_hint}{prompt.strip()}"
+    full_prompt = f"{orientation_hint}{prompt.strip()}\n\n{TEXT_DISCIPLINE}"
     # gpt-image only accepts a fixed set of sizes; pick by orientation, then normalize to
     # the exact scene target. A non-standard size raises, so we fall back to "auto".
     size = "1024x1536" if portrait else "1536x1024"
