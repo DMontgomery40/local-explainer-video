@@ -12,11 +12,13 @@ import os
 import shutil
 import subprocess
 import sys
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from core.scene_modes import scene_is_cathode_motion
+from core.generation_receipts import paid_bytes, status_code, atomic_bytes, request_digest
 
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
@@ -57,17 +59,59 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+_runtime_scope: ContextVar = ContextVar("codex_runtime_scope", default=None)
+
+
+@contextmanager
+def codex_runtime_scope():
+    token = _runtime_scope.set({})
+    try:
+        yield
+    finally:
+        _runtime_scope.reset(token)
+
+
+def resolve_codex_runtime() -> dict[str, str]:
+    """Check the configured executable or working PATH candidates per job."""
+    scope = _runtime_scope.get()
+    if scope is not None and "runtime" in scope:
+        return scope["runtime"]
+    configured = (os.getenv("CODEX_BINARY") or "").strip()
+    candidates = ([str(Path(configured).expanduser())] if configured else
+                  [str(Path(entry) / "codex") for entry in os.get_exec_path()])
+    failures = []
+    for candidate in dict.fromkeys(candidates):
+        resolved = shutil.which(candidate)
+        if not resolved:
+            failures.append(candidate)
+            continue
+        try:
+            result = subprocess.run([resolved, "--version"], capture_output=True,
+                                    text=True, timeout=15, check=True)
+            version = result.stdout.strip()
+            if not version:
+                raise RuntimeError("Empty version output")
+            runtime = {"path": str(Path(resolved).absolute()), "version": version}
+            if scope is not None:
+                scope["runtime"] = runtime
+            return runtime
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            failures.append(candidate)
+    if configured:
+        raise RuntimeError(f"Configured Codex executable failed its version check: {configured}")
+    raise FileNotFoundError("No working Codex executable on PATH")
+
+
 def _codex_binary() -> str:
-    return (os.getenv("CODEX_BINARY") or "codex").strip()
+    return resolve_codex_runtime()["path"]
 
 
 def _codex_cli_available() -> bool:
-    binary = _codex_binary()
-    if not binary:
+    try:
+        resolve_codex_runtime()
+        return True
+    except FileNotFoundError:
         return False
-    if os.sep in binary:
-        return Path(binary).expanduser().exists()
-    return shutil.which(binary) is not None
 
 
 def _codex_runner_model() -> str | None:
@@ -213,10 +257,13 @@ def _run_codex_exec_image(
     target_width: int = TARGET_WIDTH,
     target_height: int = TARGET_HEIGHT,
 ) -> Path:
-    if not _codex_cli_available():
-        raise RuntimeError(
-            "Local Codex CLI is not available. Install/configure `codex` before generating still images."
-        )
+    runtime = resolve_codex_runtime()
+    # This file belongs to this exact intended invocation, never a canonical PNG.
+    identity = {"provider": "codex", "prompt": prompt, "runner_model": runner_model or _codex_runner_model(),
+                "width": target_width, "height": target_height}
+    raw_path = output_path.parent / ".codex-output" / request_digest(identity) / "raw.png"
+    raw_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    dispatch_prompt = prompt.replace(str(output_path), str(raw_path))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_dir = _image_log_dir(output_path)
@@ -227,7 +274,7 @@ def _run_codex_exec_image(
     # Honor the user's codex config (auth, default model, image tool); running with
     # --ignore-user-config made codex fall back to a model the account rejects.
     cmd = [
-        _codex_binary(),
+        runtime["path"],
         "exec",
         "--json",
         "-C",
@@ -244,25 +291,30 @@ def _run_codex_exec_image(
         cmd.extend(["-m", resolved_runner_model])
     cmd.append("-")
 
-    _log(f"Calling local Codex image generation for {output_path.name}")
-    with jsonl_path.open("w", encoding="utf-8") as stdout_handle:
-        proc = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            stdout=stdout_handle,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+    def dispatch() -> bytes:
+        raw_path.unlink(missing_ok=True)
+        with jsonl_path.open("w", encoding="utf-8") as stdout_handle:
+            proc = subprocess.run(cmd, input=dispatch_prompt, text=True,
+                                  stdout=stdout_handle, stderr=subprocess.STDOUT, check=False)
+        if not raw_path.is_file():
+            raise RuntimeError(f"Codex returned {proc.returncode} without exact new output; inspect {jsonl_path}")
+        return raw_path.read_bytes()
 
-    if not output_path.exists():
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"codex exec failed while generating {output_path.name}; inspect {jsonl_path}"
-            )
-        raise RuntimeError(
-            f"codex exec finished without writing {output_path}; inspect {jsonl_path} and {final_message_path}"
-        )
+    def recover() -> bytes | None:
+        if not raw_path.is_file():
+            return None
+        import io
+        from PIL import Image
+        raw = raw_path.read_bytes()
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                image.verify()
+        except Exception:
+            return None
+        return raw
+
+    raw = paid_bytes(identity, dispatch, output_path=output_path, provenance=runtime, recover=recover)
+    atomic_bytes(output_path, raw)
 
     _ensure_png(output_path)
     _normalize_image_to_target(output_path, target_width, target_height)
@@ -337,28 +389,33 @@ def _generate_image_openai(
     api_key = (os.getenv("OPENAI_IMAGE_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
     resolved_model = (os.getenv("LOCAL_EXPLAINER_IMAGE_MODEL") or "gpt-image-1").strip() or "gpt-image-1"
 
-    client = openai.OpenAI(base_url=base_url, api_key=api_key) if api_key else openai.OpenAI(base_url=base_url)
+    client = openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0) if api_key else openai.OpenAI(base_url=base_url, max_retries=0)
 
     def _call(size_value: str):
-        return client.images.generate(
-            model=resolved_model,
-            prompt=full_prompt,
-            size=size_value,
-            quality=quality,
-            output_format="png",
-        )
+        request = {"provider": "openai", "base_url": base_url, "model": resolved_model,
+                   "prompt": full_prompt, "size": size_value, "quality": quality,
+                   "output_format": "png", "width": target_width, "height": target_height}
+        def dispatch():
+            result = client.images.generate(model=resolved_model, prompt=full_prompt,
+                                            size=size_value, quality=quality, output_format="png")
+            payload = result.data[0].b64_json if getattr(result, "data", None) else None
+            if not payload:
+                raise RuntimeError(f"OpenAI returned no image payload for {output_path.name}")
+            # Save the acknowledged encoded response before decoding/conversion.
+            return payload.encode("ascii")
+        encoded = paid_bytes(request, dispatch, output_path=output_path,
+                             key="image-auto" if size_value == "auto" else "paid")
+        return base64.b64decode(encoded, validate=True)
 
-    _log(f"Generating {output_path.name} via {resolved_model} at {size} (quality={quality})")
     try:
-        result = _call(size)
-    except Exception as exc:  # a rejected size falls back to model-chosen dimensions
-        _log(f"Size {size} rejected ({type(exc).__name__}); retrying at auto")
-        result = _call("auto")
-
-    payload = result.data[0].b64_json if getattr(result, "data", None) else None
-    if not payload:
-        raise RuntimeError(f"OpenAI returned no image payload for {output_path.name}")
-    output_path.write_bytes(base64.b64decode(payload))
+        raw = _call(size)
+    except Exception as exc:
+        body = getattr(exc, "body", {})
+        error = body.get("error", body) if isinstance(body, dict) else {}
+        if status_code(exc) not in {400, 422} or error.get("param") != "size":
+            raise
+        raw = _call("auto")
+    atomic_bytes(output_path, raw)
 
     _ensure_png(output_path)
     _normalize_image_to_target(output_path, target_width, target_height)
@@ -379,7 +436,7 @@ def generate_image(
     """Generate a still image, preferring the local Codex CLI (subscription-covered).
 
     The Codex native image tool is the primary path; the metered OpenAI gpt-image
-    API is only a fallback when Codex is unavailable or a codex run fails. Set
+    API is only a fallback when Codex is unavailable before dispatch. Set
     LOCAL_EXPLAINER_IMAGE_PROVIDER=openai to force the API path explicitly.
     """
     output_path = Path(output_path)
@@ -398,16 +455,13 @@ def generate_image(
             target_width=target_width,
             target_height=target_height,
         )
-        try:
-            return _run_codex_exec_image(
-                prompt=codex_prompt,
-                output_path=output_path,
-                runner_model=runner_model,
-                target_width=target_width,
-                target_height=target_height,
-            )
-        except RuntimeError as exc:
-            _log(f"Codex image generation failed ({exc}); falling back to the OpenAI image API")
+        return _run_codex_exec_image(
+            prompt=codex_prompt,
+            output_path=output_path,
+            runner_model=runner_model,
+            target_width=target_width,
+            target_height=target_height,
+        )
 
     return _generate_image_openai(
         prompt=prompt,

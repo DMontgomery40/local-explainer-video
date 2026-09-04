@@ -8,6 +8,7 @@ from typing import Literal
 
 import requests
 
+from core.generation_receipts import paid_bytes, atomic_bytes
 from core.rate_limiter import elevenlabs_limiter, openai_limiter, image_limiter
 
 # ElevenLabs voices - curated selection for narration
@@ -148,6 +149,23 @@ def generate_audio(
         raise ValueError(f"Unknown TTS provider: {tts_provider}")
 
 
+def _replicate_audio_output(model: str, inputs: dict, output_path: Path):
+    """Save the creation acknowledgement before polling or downloading."""
+    import replicate
+    client = replicate.Client()
+    prediction_id = image_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "replicate", "base_url": os.getenv("REPLICATE_BASE_URL") or "https://api.replicate.com",
+         "model": model, "input": inputs},
+        lambda: client.models.predictions.create(model=model, input=inputs, wait=False).id.encode(),
+        output_path=output_path))
+    prediction = client.predictions.get(prediction_id.decode())
+    if prediction.status not in {"succeeded", "failed", "canceled"}:
+        prediction.wait()
+    if prediction.status != "succeeded":
+        raise RuntimeError(f"Acknowledged Replicate prediction {prediction_id.decode()} is {prediction.status}")
+    return prediction.output
+
+
 def _generate_with_chatterbox(
     text: str,
     output_path: Path,
@@ -170,25 +188,12 @@ def _generate_with_chatterbox(
     Returns:
         Path to the saved audio file
     """
-    import replicate
-
-    def _call_chatterbox():
-        return replicate.run(
-            "resemble-ai/chatterbox",
-            input={
-                "prompt": text,
-                "exaggeration": exaggeration,
-                "cfg_weight": cfg_weight,
-                "temperature": temperature,
-                "seed": 0,  # Random seed for variety
-            }
-        )
-
-    # Use image_limiter since it's also Replicate
-    output_url = image_limiter.call_with_retry(_call_chatterbox)
+    output_url = _replicate_audio_output("resemble-ai/chatterbox", {
+        "prompt": text, "exaggeration": exaggeration, "cfg_weight": cfg_weight,
+        "temperature": temperature, "seed": 0}, output_path)
 
     # Download the audio file
-    response = requests.get(output_url)
+    response = requests.get(output_url, timeout=(10, 180))
     response.raise_for_status()
 
     # Chatterbox returns WAV, save directly
@@ -245,20 +250,9 @@ def _generate_with_elevenlabs_replicate(
     if replicate_voice not in REPLICATE_ELEVENLABS_VOICES:
         replicate_voice = "Drew"  # safe fallback
 
-    def _call_elevenlabs_replicate():
-        return replicate.run(
-            model_slug,
-            input={
-                "prompt": text,
-                "voice": replicate_voice,
-                "speed": speed,
-                "stability": stability,
-                "similarity_boost": similarity_boost,
-                "style": style,
-            }
-        )
-
-    output_url = image_limiter.call_with_retry(_call_elevenlabs_replicate)
+    output_url = _replicate_audio_output(model_slug, {
+        "prompt": text, "voice": replicate_voice, "speed": speed, "stability": stability,
+        "similarity_boost": similarity_boost, "style": style}, output_path)
 
     # Download the audio file (Replicate returns a URL)
     if hasattr(output_url, "url"):
@@ -268,7 +262,7 @@ def _generate_with_elevenlabs_replicate(
     else:
         url = str(output_url)
 
-    response = requests.get(url)
+    response = requests.get(url, timeout=(10, 180))
     response.raise_for_status()
 
     # Save as the output format (likely mp3 from ElevenLabs)
@@ -359,10 +353,12 @@ def _generate_with_elevenlabs(
         return resp
 
     # Use dedicated ElevenLabs limiter (configurable via ELEVENLABS_MIN_DELAY_S / ELEVENLABS_MAX_RETRIES)
-    response = elevenlabs_limiter.call_with_retry(_call_elevenlabs)
+    raw = elevenlabs_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "elevenlabs", "url": url, "output_format": "mp3_44100_128", **payload},
+        lambda: _call_elevenlabs().content, output_path=output_path))
 
     mp3_path = output_path.with_suffix(".mp3")
-    mp3_path.write_bytes(response.content)
+    atomic_bytes(mp3_path, raw)
 
     if output_path.suffix == ".wav":
         _convert_mp3_to_wav(mp3_path, output_path)
@@ -385,7 +381,7 @@ def _generate_with_openai(
     if model.startswith("gpt-realtime") or model.startswith("gpt-4o"):
         raise ValueError("OpenAI realtime and 4o-based audio models are disabled for clinic narration.")
 
-    client = openai.OpenAI()
+    client = openai.OpenAI(max_retries=0)
 
     # The general audio model family works through chat-completions audio output.
     if model.startswith("gpt-audio") or "audio-preview" in model:
@@ -415,8 +411,10 @@ def _generate_with_openai(
                 temperature=0.2,
             )
 
-        response = openai_limiter.call_with_retry(_call_openai_chat_audio)
-        audio_b64 = response.choices[0].message.audio.data
+        audio_b64 = openai_limiter.call_with_retry(lambda: paid_bytes(
+            {"provider": "openai-chat-audio", "base_url": str(client.base_url), "model": model,
+             "voice": voice, "instructions": instructions, "text": text, "format": "wav", "temperature": 0.2},
+            lambda: _call_openai_chat_audio().choices[0].message.audio.data.encode("ascii"), output_path=output_path))
         audio_bytes = base64.b64decode(audio_b64)
 
         wav_path = output_path if output_path.suffix == ".wav" else output_path.with_suffix(".wav")
@@ -434,11 +432,12 @@ def _generate_with_openai(
             instructions=instructions,
         )
 
-    response = openai_limiter.call_with_retry(_call_openai)
-
-    # Save the audio
+    raw = openai_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "openai-tts", "base_url": str(client.base_url), "model": model, "voice": voice,
+         "input": text, "response_format": "mp3", "instructions": instructions},
+        lambda: _call_openai().content, output_path=output_path))
     mp3_path = output_path.with_suffix(".mp3")
-    response.stream_to_file(str(mp3_path))
+    atomic_bytes(mp3_path, raw)
 
     # Convert to WAV for consistency (MoviePy works better with WAV)
     if output_path.suffix == ".wav":
@@ -497,18 +496,20 @@ def _generate_with_openrouter(
         response.raise_for_status()
         return response
 
-    response = openai_limiter.call_with_retry(_call_openrouter)
+    raw = openai_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "openrouter", "url": "https://openrouter.ai/api/v1/audio/speech", **payload},
+        lambda: _call_openrouter().content, output_path=output_path))
     if response_format == "pcm":
         wav_path = output_path if output_path.suffix == ".wav" else output_path.with_suffix(".wav")
         with wave.open(str(wav_path), "wb") as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(24000)
-            wav_file.writeframes(response.content)
+            wav_file.writeframes(raw)
         return wav_path
 
     mp3_path = output_path.with_suffix(".mp3")
-    mp3_path.write_bytes(response.content)
+    mp3_path.write_bytes(raw)
     if output_path.suffix == ".wav":
         _convert_mp3_to_wav(mp3_path, output_path)
         mp3_path.unlink(missing_ok=True)
