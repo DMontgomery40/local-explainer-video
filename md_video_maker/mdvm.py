@@ -506,19 +506,21 @@ def _scene_audio_fingerprint(scene: dict[str, Any], voice_settings: dict[str, An
 
 def render_project(project_dir: Path, *, force_images: bool = False, force_audio: bool = False,
                    attempt_id: str | None = None, operation_dir: Path | None = None,
-                   recovery: bool = False) -> Path:
+                   recovery: bool = False, on_locked=None, on_output=None) -> Path:
     project_dir = Path(project_dir).resolve()
     operations = Path(operation_dir) if operation_dir is not None else project_dir / ".render-operations"
     if recovery and not attempt_id:
         raise ValueError("Recovery requires the original attempt_id")
     with exclusive_lock(project_dir / ".render-operations" / "project.lock"), codex_runtime_scope():
+        if on_locked is not None:
+            on_locked()
         return _render_project(project_dir, force_images=force_images, force_audio=force_audio,
                                attempt_id=attempt_id or uuid4().hex, operation_dir=operations,
-                               recovery=recovery)
+                               recovery=recovery, on_output=on_output)
 
 
 def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
-                    attempt_id: str, operation_dir: Path, recovery: bool) -> Path:
+                    attempt_id: str, operation_dir: Path, recovery: bool, on_output=None) -> Path:
     plan_path = project_dir / "plan.json"
     if not plan_path.exists():
         raise FileNotFoundError(f"Missing plan.json at {plan_path}")
@@ -705,6 +707,9 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
     if Path(video_path).resolve() != expected_output.resolve() or not expected_output.is_file():
         raise ReceiptConflict("Assembly did not produce the exact new MP4")
     _validate_asset(expected_output)
+    if on_output is not None:
+        # Bind exact new bytes before canonical replacement and lock release.
+        on_output(expected_output)
     video_path = project_dir / f"{project_dir.name}.mp4"
     if video_path.exists():
         previous = video_path.read_bytes()
