@@ -294,9 +294,12 @@ def run_attempt(attempt_dir: Path) -> dict:
                 'manifest_sha256': digest_bytes((attempt/'assets'/attempt.name/'attempt.json').read_bytes())}
             write_owned(attempt/'output.json', output)
         try:
-            verify_input()
+            accepted = admission['input']
+            if release_identity() != accepted['release'] or effective_config() != accepted['config']:
+                raise ReceiptConflict('Admitted application, lock or config changed')
             output = _output(attempt, admission)
             if output is None:
+                verify_input()
                 asset_attempt = attempt/'assets'/attempt.name
                 recovery = asset_attempt.exists() and any(asset_attempt.iterdir())
                 mdvm.render_project(Path(admission['project_dir']), attempt_id=attempt.name,

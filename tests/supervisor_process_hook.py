@@ -63,3 +63,17 @@ if os.getenv('SUPERVISOR_TEST_ROOT'):
             raise SystemExit(s.main())
         return run_module(name, alter_argv)
     runpy._run_module_as_main = run_as_main
+
+    if phase == 'forbid-render' or phase.startswith('changed-runtime-'):
+        def forbid_render(*args, **kwargs):
+            (root/'unexpected-render').touch()
+            raise AssertionError('Registered output recovery invoked the renderer')
+        mdvm.render_project = forbid_render
+    if phase.startswith('changed-runtime-'):
+        original_release = s.release_identity
+        def changed_release():
+            identity = original_release()
+            key = {'application': 'source_sha256', 'lock': 'lock_sha256', 'python': 'python'}[phase.removeprefix('changed-runtime-')]
+            identity[key] = 'Changed runtime identity'
+            return identity
+        s.release_identity = changed_release

@@ -92,6 +92,12 @@ attempt/owner tokens, SHA256 and actual duration/dimensions/codec/size. Only the
 can the canonical project MP4 be replaced. `terminal.json` binds that evidence.
 An interrupted output receipt causes only local reassembly from existing asset
 receipts; an interrupted terminal receipt can complete directly from the saved
-output without invoking the renderer. A later render cannot change historical
+output without invoking the renderer. This recovery validates the admitted
+application, Python/lock and effective runtime config, then the immutable output
+evidence. It does not read current project plan/local-source bytes; lawful later
+edits or removal cannot invalidate already registered output. The complete
+current-input check runs only when rendering/reassembly is required, including
+under the project lock. Rejoin recovery by the saved attempt path rather than
+re-preparing the old operation against newer project inputs. A later render cannot change historical
 attempt-owned bytes. File writes use the existing flush/fsync/atomic-replace/
 parent-fsync helpers; no daemon service or wall-clock lease is involved.

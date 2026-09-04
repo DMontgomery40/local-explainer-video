@@ -206,17 +206,41 @@ def test_preexisting_mp4_and_later_render_cannot_substitute_output(project, work
     assert state(a)['output'] == first['output']
 
 
-def test_completed_output_survives_death_before_terminal_and_later_canonical(project, worker):
+@pytest.mark.parametrize('change', ['canonical', 'plan', 'local_source', 'missing_plan', 'missing_local_source'])
+def test_completed_output_survives_death_before_terminal_and_later_project_edit(project, worker, change):
+    from PIL import Image
+    local_source = project/'local.png'
+    if change in {'local_source', 'missing_local_source'}:
+        Image.new('RGB', (64,36), 'blue').save(local_source)
+        plan = json.loads((project/'plan.json').read_text())
+        plan['scenes'][0]['image_source_path'] = 'local.png'
+        (project/'plan.json').write_text(json.dumps(plan))
     a = prepare(project)
     child = worker(a, 'before_terminal')
     wait_for(lambda: (project.parent/'barrier-before_terminal').exists())
     output = (a/'output.mp4').read_bytes()
+    receipt = (a/'output.json').read_bytes()
+    dispatched = calls(project)
     child.kill(); child.wait()
-    (project/(project.name+'.mp4')).write_bytes(b'later canonical')
-    worker(a)
+    with supervisor().project_write_lock(project):
+        if change == 'canonical':
+            (project/(project.name+'.mp4')).write_bytes(b'later canonical')
+        elif change == 'plan':
+            plan = json.loads((project/'plan.json').read_text())
+            plan['scenes'][0]['narration'] = 'Later authorized narration'
+            (project/'plan.json').write_text(json.dumps(plan))
+        elif change == 'local_source':
+            Image.new('RGB', (64,36), 'red').save(local_source)
+        elif change == 'missing_plan':
+            (project/'plan.json').unlink()
+        else:
+            local_source.unlink()
+    worker(a, 'forbid-render')
     assert terminal(a)['state'] == 'complete'
     assert (a/'output.mp4').read_bytes() == output
-    assert len(calls(project)) == 4
+    assert (a/'output.json').read_bytes() == receipt
+    assert calls(project) == dispatched
+    assert not (project.parent/'unexpected-render').exists()
 
 
 def test_output_handoff_holds_project_lock(project, worker):
@@ -353,6 +377,7 @@ def test_codex_runtime_remains_updateable_and_checked_per_job(project, worker, m
     monkeypatch.setenv('CODEX_BINARY', str(binary))
     monkeypatch.setenv('LOCAL_EXPLAINER_IMAGE_PROVIDER', 'codex')
     a = prepare(project)
+    admission = (a/'admission.json').read_bytes()
     install('2.0')
     assert prepare(project) == a
     worker(a)
@@ -360,7 +385,7 @@ def test_codex_runtime_remains_updateable_and_checked_per_job(project, worker, m
     runtime = json.loads((a/'runtime.json').read_text())
     assert runtime['path'] == str(binary)
     assert runtime['version'] == 'codex 2.0'
-    assert '1.0' not in (a/'admission.json').read_text()
+    assert (a/'admission.json').read_bytes() == admission
 
 
 @pytest.mark.parametrize('field', ['path','sha256','attempt_token','manifest_sha256','media'])
@@ -387,3 +412,52 @@ def test_new_owner_waiting_for_project_does_not_reuse_old_terminal_failure(proje
     assert terminal(b)['state'] == 'complete'
     worker(a)
     assert terminal(a)['state'] == 'complete'
+
+
+@pytest.mark.parametrize('change', ['application', 'lock', 'python', 'config'])
+def test_registered_output_still_requires_admitted_release_and_runtime(project, worker, monkeypatch, change):
+    a = prepare(project)
+    child = worker(a, 'before_terminal')
+    wait_for(lambda: (project.parent/'barrier-before_terminal').exists())
+    output = (a/'output.mp4').read_bytes()
+    dispatched = calls(project)
+    child.kill(); child.wait()
+    if change == 'config':
+        monkeypatch.setenv('LOCAL_EXPLAINER_IMAGE_QUALITY', 'low')
+        worker(a, 'forbid-render')
+    else:
+        worker(a, 'changed-runtime-'+change)
+    result = terminal(a)
+    assert result['state'] == 'reconciliation_required'
+    assert result['failures']['attempt']['error_type'] == 'ReceiptConflict'
+    assert (a/'output.mp4').read_bytes() == output
+    assert calls(project) == dispatched
+    assert not (project.parent/'unexpected-render').exists()
+
+
+@pytest.mark.parametrize('change', ['plan', 'local_source'])
+def test_unregistered_output_checks_current_inputs_before_reassembly(project, worker, change):
+    from PIL import Image
+    local_source = project/'local.png'
+    if change == 'local_source':
+        Image.new('RGB', (64,36), 'blue').save(local_source)
+        plan = json.loads((project/'plan.json').read_text())
+        plan['scenes'][0]['image_source_path'] = 'local.png'
+        (project/'plan.json').write_text(json.dumps(plan))
+    a = prepare(project)
+    child = worker(a, 'before_output')
+    wait_for(lambda: (project.parent/'barrier-before_output').exists())
+    dispatched = calls(project)
+    child.kill(); child.wait()
+    assert not (a/'output.json').exists()
+    with supervisor().project_write_lock(project):
+        if change == 'plan':
+            (project/'plan.json').write_text((project/'plan.json').read_text()+'\n')
+        else:
+            Image.new('RGB', (64,36), 'red').save(local_source)
+    worker(a, 'forbid-render')
+    result = terminal(a)
+    assert result['state'] == 'reconciliation_required'
+    assert result['failures']['attempt']['error_type'] == 'ReceiptConflict'
+    assert calls(project) == dispatched
+    assert not (project.parent/'unexpected-render').exists()
