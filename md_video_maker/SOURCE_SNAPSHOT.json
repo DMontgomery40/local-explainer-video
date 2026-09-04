@@ -1,0 +1,16 @@
+{
+  "source": "markdown-video-experiment/md-video-maker",
+  "captured": "2026-09-04",
+  "source_sha256": {
+    "mdvm.py": "92614f265f8d534132218ec5892d21638f64eac6b37361b8876df440c6af4c99",
+    "mixed_video_assembly.py": "5ed412cac6b0e352ee098aa7615d5148fc27be8f054ae66531915afc04f8e611",
+    "VIDEO_BRAIN.md": "acd02fb0ef4778672780ffcdc4436f8ce0f70045eb42159c9584299422600121",
+    "GOOD_EXAMPLES.md": "6cc588fee9063712fc0fe148f151da64ca4abcb6d95b21b913327ae2182df7b7",
+    "README.md": "51d10bbe28c7343cc2791793481b32de240cad9e27aa3ffc3ec67c657e5eca52",
+    "tests/test_mixed_video_assembly.py": "f58af41905752daa311cc5c00f243e3e547634d4235743080db581af999409b6"
+  },
+  "initial_adaptations": [
+    "Resolve core modules from the containing repository.",
+    "Import mixed assembly through the package."
+  ]
+}

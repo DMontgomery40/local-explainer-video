@@ -54,3 +54,6 @@ Thumbs.db
 
 # Experiments
 experiments/
+
+# Isolated clinic renderer environment
+.renderer-venv/

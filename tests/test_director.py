@@ -151,11 +151,23 @@ def test_build_storyboard_batch_request_enables_300k_beta():
     assert COMPACTION_BETA in request["params"]["betas"]
 
 
-def test_load_prompt_inlines_reference_successful_plan():
+def test_load_prompt_inlines_reference_successful_plan(tmp_path, monkeypatch):
+    # The reference content belongs to the project; this contract test supplies
+    # its own source files so it does not depend on an untracked patient plan.
+    from core import director
+
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    template = "Before {{REFERENCE_SUCCESSFUL_PLAN_04_08_1997_0}} after"
+    reference = '{"project_name": "synthetic-reference", "scenes": []}'
+    (prompts / "director_system.txt").write_text(template)
+    (prompts / "reference_successful_plan_04-08-1997-0.json").write_text(reference)
+    monkeypatch.setattr(director, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(director, "_PROMPTS", {})
+    monkeypatch.delenv("DIRECTOR_SYSTEM_PROMPT_PATH", raising=False)
     prompt = load_prompt("director_system")
 
-    assert "{{REFERENCE_SUCCESSFUL_PLAN_04_08_1997_0}}" not in prompt
-    assert '"project_name": "04-08-1997-0"' in prompt
+    assert prompt == f"Before {reference} after"
 
 
 def test_resolve_refinement_runner_prefers_codex_for_api_projects(monkeypatch):
