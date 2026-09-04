@@ -610,11 +610,17 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
                 atomic_json(prepared, spec)
 
     failures = {}
-    def generate_one(*args, **kwargs):
+    def generate_one(asset_id, canonical, digest, settings, generate, *, force):
         try:
-            _generate_asset(*args, **kwargs)
+            # A durable current-attempt output can repair an interrupted canonical
+            # promotion even while its old sidecars disagree with the new bytes.
+            manifest = operation_dir / attempt_id / asset_id / "asset.json"
+            completed = manifest.exists() and json.loads(manifest.read_text()).get("output_sha256")
+            if completed or force or not _asset_current(canonical, digest, settings):
+                _generate_asset(operation_dir, attempt_id, asset_id, canonical, digest,
+                                settings, generate, recovery=recovery)
         except Exception as exc:
-            failures[args[2]] = exc
+            failures[asset_id] = exc
 
     for idx, scene in enumerate(scenes):
         apply_render_dimensions(scene, target_width, target_height)
@@ -652,18 +658,16 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
             video_source_path is None
             and source_path is None
             and image_path is not None
-            and (force_images or not _asset_current(image_path, image_digest, image_settings))
         ):
-            generate_one(operation_dir, attempt_id, f"image-{scene_id}", image_path,
+            generate_one(f"image-{scene_id}", image_path,
                             image_digest, image_settings,
                             lambda staging: generate_scene_image(
                                 dict(scene), staging, model="gpt-image-2", target_width=target_width,
                                 target_height=target_height,
                                 orientation="portrait" if target_height > target_width else "landscape"),
-                            recovery=recovery)
+                            force=force_images)
         audio_digest = _scene_audio_fingerprint(scene, voice_settings)
-        if force_audio or not _asset_current(audio_path, audio_digest, voice_settings):
-            generate_one(operation_dir, attempt_id, f"audio-{scene_id}", audio_path,
+        generate_one(f"audio-{scene_id}", audio_path,
                             audio_digest, voice_settings,
                             lambda staging: generate_scene_audio(
                                 dict(scene),
@@ -680,7 +684,7 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
                                 elevenlabs_similarity_boost=elevenlabs_similarity_boost,
                                 elevenlabs_style=elevenlabs_style,
                                 elevenlabs_use_speaker_boost=elevenlabs_use_speaker_boost,
-                            ), recovery=recovery)
+                            ), force=force_audio)
 
     if failures:
         raise AssetFailures(failures)

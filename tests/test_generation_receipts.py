@@ -334,3 +334,172 @@ def test_missing_acknowledgement_after_dispatch_never_becomes_unstarted(tmp_path
         with pytest.raises(UnknownDispatch):
             paid_bytes({'text':'same'},call)
     assert call.call_count==1
+
+
+@pytest.fixture
+def synthetic_render(monkeypatch, tmp_path):
+    """Exercise real receipt/asset code with synthetic paid bytes and local media."""
+    import io
+    import wave
+    from PIL import Image
+    from core.generation_receipts import paid_bytes
+    from md_video_maker import mdvm
+
+    plan = {'meta': {'render_profile': {'width': 8, 'height': 8}},
+            'scenes': [{'id': n, 'visual_prompt': f'image {n}', 'narration': f'words {n}'}
+                       for n in range(2)]}
+    (tmp_path / 'plan.json').write_text(json.dumps(plan))
+    paid_calls = []
+
+    def generate_image(scene, staging, **kwargs):
+        quality = image_gen._image_quality()
+        def dispatch():
+            paid_calls.append(('image', scene['id'], quality))
+            buffer = io.BytesIO()
+            Image.new('RGB', (8, 8), 'red' if quality == 'low' else 'blue').save(buffer, 'PNG')
+            return buffer.getvalue()
+        output = staging / 'images' / f"scene_{scene['id']:03d}.png"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(paid_bytes({'prompt': scene['visual_prompt'], 'quality': quality}, dispatch))
+        return output
+
+    def generate_audio(scene, staging, **kwargs):
+        def dispatch():
+            paid_calls.append(('audio', scene['id']))
+            buffer = io.BytesIO()
+            with wave.open(buffer, 'wb') as audio:
+                audio.setparams((1, 2, 24000, 0, 'NONE', 'not compressed'))
+                audio.writeframes(b'\0\0' * 240)
+            return buffer.getvalue()
+        output = staging / 'audio' / f"scene_{scene['id']:03d}.wav"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(paid_bytes({'narration': scene['narration']}, dispatch))
+        return output
+
+    def assemble(scenes, project, *, output_filename, **kwargs):
+        output = project / output_filename
+        output.write_bytes(b'synthetic compositor output')
+        return output
+
+    monkeypatch.setattr(mdvm, 'generate_scene_image', generate_image)
+    monkeypatch.setattr(mdvm, 'generate_scene_audio', generate_audio)
+    monkeypatch.setattr(mdvm, 'assemble_video', assemble)
+    monkeypatch.setattr(mdvm, 'ffprobe_duration', lambda _: 1.0)
+    monkeypatch.setenv('LOCAL_EXPLAINER_IMAGE_QUALITY', 'low')
+    return mdvm, tmp_path, paid_calls
+
+
+@pytest.mark.parametrize('interruption', ['before_receipt', 'before_fingerprint', 'after_fingerprint'])
+def test_same_source_new_settings_recovers_each_promotion_sidecar_gap(synthetic_render, monkeypatch, interruption):
+    from core.generation_receipts import AssetFailures, digest_bytes
+    mdvm, project, paid_calls = synthetic_render
+    mdvm.render_project(project, attempt_id='old')
+    canonical = project / 'images' / 'scene_000.png'
+    old_source = mdvm._fingerprint_path(canonical).read_bytes()
+    old_bytes = canonical.read_bytes()
+    monkeypatch.setenv('LOCAL_EXPLAINER_IMAGE_QUALITY', 'high')
+    real_json, real_bytes = mdvm.atomic_json, mdvm.atomic_bytes
+    receipt = canonical.with_name(canonical.name + '.receipt.json')
+    fingerprint = mdvm._fingerprint_path(canonical)
+
+    def interrupt_json(path, value):
+        if path == receipt and interruption == 'before_receipt':
+            raise OSError('interrupted before receipt')
+        return real_json(path, value)
+
+    def interrupt_bytes(path, value):
+        if path == fingerprint and interruption == 'before_fingerprint':
+            raise OSError('interrupted before fingerprint')
+        result = real_bytes(path, value)
+        if path == fingerprint and interruption == 'after_fingerprint':
+            raise OSError('interrupted after fingerprint')
+        return result
+
+    with monkeypatch.context() as fault:
+        fault.setattr(mdvm, 'atomic_json', interrupt_json)
+        fault.setattr(mdvm, 'atomic_bytes', interrupt_bytes)
+        with pytest.raises(AssetFailures) as failure:
+            mdvm.render_project(project, attempt_id='new')
+        assert set(failure.value.failures) == {'image-0'}
+
+    operation = project / '.render-operations' / 'new' / 'image-0'
+    completed = json.loads((operation / 'asset.json').read_text())
+    exact = operation / 'staging' / 'images' / canonical.name
+    assert canonical.read_bytes() != old_bytes
+    assert digest_bytes(exact.read_bytes()) == completed['output_sha256']
+    assert mdvm._fingerprint_path(canonical).read_bytes() == old_source
+    before_recovery = list(paid_calls)
+    mdvm.render_project(project, attempt_id='new', recovery=True)
+    assert paid_calls == before_recovery
+    assert canonical.read_bytes() == exact.read_bytes()
+    assert mdvm._asset_current(canonical, completed['source_digest'], completed['settings'])
+
+
+@pytest.mark.parametrize('failure_kind', ['hash', 'format', 'receipt_json', 'legacy_registration'])
+@pytest.mark.parametrize('asset_kind', ['image', 'audio'])
+def test_reuse_validation_failures_are_isolated_without_regeneration(synthetic_render, monkeypatch, failure_kind, asset_kind):
+    from core.generation_receipts import AssetFailures
+    mdvm, project, paid_calls = synthetic_render
+    mdvm.render_project(project, attempt_id='old')
+    folder, suffix = ('images', '.png') if asset_kind == 'image' else ('audio', '.wav')
+    canonical = project / folder / ('scene_000' + suffix)
+    receipt = canonical.with_name(canonical.name + '.receipt.json')
+    if failure_kind == 'hash':
+        canonical.write_bytes(b'corrupted bytes')
+    elif failure_kind == 'format':
+        receipt.unlink()
+        canonical.write_bytes(b'not valid media')
+    elif failure_kind == 'receipt_json':
+        receipt.write_text('{invalid json')
+    else:
+        receipt.unlink()
+        real_json = mdvm.atomic_json
+        def fail_legacy_registration(path, payload):
+            if path == receipt:
+                raise OSError('legacy receipt registration failed')
+            return real_json(path, payload)
+        monkeypatch.setattr(mdvm, 'atomic_json', fail_legacy_registration)
+    # Independent scene assets are missing and need work in the new accepted attempt.
+    for path in (project / 'images' / 'scene_001.png', project / 'audio' / 'scene_001.wav'):
+        path.unlink()
+    paid_calls.clear()
+    with pytest.raises(AssetFailures) as failure:
+        mdvm.render_project(project, attempt_id='new')
+    assert set(failure.value.failures) == {f'{asset_kind}-0'}
+    assert ('image', 1, 'low') in paid_calls
+    assert ('audio', 1) in paid_calls
+    assert not any(call[0] == asset_kind and call[1] == 0 for call in paid_calls)
+    for asset in ('image-1', 'audio-1'):
+        assert json.loads((project / '.render-operations' / 'new' / asset / 'asset.json').read_text())['output_sha256']
+
+
+@pytest.mark.parametrize('corruption', ['missing_staged', 'staged_hash', 'staged_format', 'operation_identity', 'operation_json'])
+def test_recovery_never_uses_valid_canonical_as_substitute_for_corrupt_completed_evidence(synthetic_render, corruption):
+    from core.generation_receipts import AssetFailures, digest_bytes
+    mdvm, project, paid_calls = synthetic_render
+    mdvm.render_project(project, attempt_id='old')
+    canonical = project / 'images' / 'scene_000.png'
+    original = canonical.read_bytes()
+    operation = project / '.render-operations' / 'old' / 'image-0'
+    exact = operation / 'staging' / 'images' / canonical.name
+    manifest = operation / 'asset.json'
+    record = json.loads(manifest.read_text())
+    if corruption == 'missing_staged':
+        exact.unlink()
+    elif corruption == 'staged_hash':
+        exact.write_bytes(b'unrelated staged bytes')
+    elif corruption == 'staged_format':
+        exact.write_bytes(b'not an image')
+        record['output_sha256'] = digest_bytes(exact.read_bytes())
+        manifest.write_text(json.dumps(record))
+    elif corruption == 'operation_identity':
+        record['source_digest'] = 'unrelated-source'
+        manifest.write_text(json.dumps(record))
+    else:
+        manifest.write_text('{broken JSON')
+    paid_calls.clear()
+    with pytest.raises(AssetFailures) as failure:
+        mdvm.render_project(project, attempt_id='old', recovery=True)
+    assert set(failure.value.failures) == {'image-0'}
+    assert paid_calls == []
+    assert canonical.read_bytes() == original
