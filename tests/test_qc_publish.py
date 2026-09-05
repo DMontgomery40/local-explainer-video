@@ -130,3 +130,51 @@ def test_explicit_qwen_batch_passes_recorded_model(tmp_path, monkeypatch):
     assert batch.regenerate_project(tmp_path)
     plan=json.loads((tmp_path/'plan.json').read_text())
     assert calls[0]['model']==plan['meta']['image_model']=='qwen/qwen-image-2512'
+
+
+@pytest.mark.parametrize('provider', [None, 'kokoro', 'openrouter', 'openai', 'elevenlabs'])
+def test_batch_speech_uses_supported_provider_defaults(tmp_path, monkeypatch, provider):
+    import json
+    import batch_regenerate as batch
+    meta = {'input_text': 'synthetic'}
+    if provider: meta.update(tts_provider=provider)
+    if provider == 'kokoro': meta.update(tts_voice='af_bella', tts_speed=1.1)
+    (tmp_path/'plan.json').write_text(json.dumps({'meta': meta}))
+    monkeypatch.setattr(batch, 'ARGS', {})
+    monkeypatch.setattr(batch, 'generate_storyboard', lambda *a, **k: [{'id': 0, 'narration': 'speech', 'visual_prompt': 'image'}])
+    monkeypatch.setattr(batch, 'generate_scene_image', lambda *a, **k: tmp_path/'image.png')
+    captured=[]
+    monkeypatch.setattr(batch, 'generate_scene_audio', lambda *a, **k: captured.append(k) or tmp_path/'audio.wav')
+    monkeypatch.setattr(batch, 'assemble_video', lambda *a, **k: tmp_path/'video.mp4')
+    assert batch.regenerate_project(tmp_path)
+    expected = 'openrouter' if provider in (None, 'kokoro') else provider
+    assert captured[0]['tts_provider'] == expected
+    if expected == 'openrouter': assert (captured[0]['voice'],captured[0]['speed']) == ('Charon',1.0)
+
+
+@pytest.mark.parametrize('failed_stage', ['image', 'audio'])
+def test_batch_required_asset_failure_cannot_assemble_silent_or_stale_scenes(tmp_path, monkeypatch, failed_stage):
+    import json
+    import batch_regenerate as batch
+    (tmp_path/'plan.json').write_text(json.dumps({'meta': {'input_text': 'synthetic'}}))
+    prior=tmp_path/(tmp_path.name+'.mp4');prior.write_bytes(b'completed original')
+    monkeypatch.setattr(batch, 'ARGS', {})
+    monkeypatch.setattr(batch, 'generate_storyboard', lambda *a, **k: [{'id': i, 'narration': 'speech', 'visual_prompt': 'image'} for i in range(2)])
+    called=[]
+    def generate(scene, *args, **kwargs):
+        called.append(scene['id'])
+        if scene['id'] == 1: raise RuntimeError('synthetic required asset failure')
+        return tmp_path/'asset'
+    monkeypatch.setattr(batch, 'generate_scene_'+failed_stage, generate)
+    other='audio' if failed_stage == 'image' else 'image'
+    monkeypatch.setattr(batch, 'generate_scene_'+other, lambda *a, **k: tmp_path/'asset')
+    monkeypatch.setattr(batch, 'assemble_video', lambda *a, **k: pytest.fail('assembled incomplete required assets'))
+    assert batch.regenerate_project(tmp_path) is False
+    assert called == [0,1]
+    assert prior.read_bytes() == b'completed original'
+
+
+def test_qc_safe_narration_repair_defaults_to_supported_clinic_voice(tmp_path):
+    from core.qc_publish import QCPublishConfig
+    cfg=QCPublishConfig(qeeg_dir=tmp_path, backend_url="http://127.0.0.1:1", cliproxy_url="http://127.0.0.1:1", cliproxy_api_key="")
+    assert (cfg.tts_provider,cfg.tts_voice,cfg.tts_speed) == ('openrouter','Charon',1.0)

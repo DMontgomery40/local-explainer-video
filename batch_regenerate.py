@@ -33,8 +33,9 @@ from core.voice_gen import (
     DEFAULT_ELEVENLABS_TEXT_NORMALIZATION,
     DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
     DEFAULT_ELEVENLABS_VOICE,
+    DEFAULT_OPENROUTER_VOICE,
+    DEFAULT_OPENAI_VOICE,
     DEFAULT_SPEED,
-    DEFAULT_VOICE,
     ElevenLabsTextNormalization,
     generate_scene_audio,
 )
@@ -116,10 +117,12 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     meta = old_plan.get("meta", {}) if isinstance(old_plan.get("meta"), dict) else {}
 
     # TTS settings: prefer CLI args (if provided), else prefer plan meta, else defaults.
-    tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "kokoro").strip()
-    if tts_provider not in {"kokoro", "elevenlabs", "openai"}:
-        print(f"  WARNING: Unknown tts_provider={tts_provider!r}; falling back to 'kokoro'")
-        tts_provider = "kokoro"
+    tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "openrouter").strip()
+    if tts_provider == "kokoro" and not ARGS.get("tts_provider"):
+        tts_provider = "openrouter"
+    if tts_provider not in {"openrouter", "elevenlabs", "openai"}:
+        print(f"ERROR: Unsupported tts_provider={tts_provider!r}")
+        return False
 
     if tts_provider == "elevenlabs":
         tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_ELEVENLABS_VOICE).strip()
@@ -145,9 +148,10 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             else meta.get("elevenlabs_use_speaker_boost", DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST)
         )
     else:
-        # Kokoro/OpenAI defaults (voice/speed are only meaningful for Kokoro here)
-        tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_VOICE).strip()
-        tts_speed = float(ARGS.get("tts_speed") or meta.get("tts_speed") or DEFAULT_SPEED)
+        matching_meta = meta if meta.get("tts_provider") == tts_provider else {}
+        default_voice = DEFAULT_OPENROUTER_VOICE if tts_provider == "openrouter" else DEFAULT_OPENAI_VOICE
+        tts_voice = (ARGS.get("tts_voice") or matching_meta.get("tts_voice") or default_voice).strip()
+        tts_speed = float(ARGS.get("tts_speed") or matching_meta.get("tts_speed") or DEFAULT_SPEED)
         elevenlabs_model_id = DEFAULT_ELEVENLABS_MODEL
         elevenlabs_text_norm = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
         elevenlabs_stability = DEFAULT_ELEVENLABS_STABILITY
@@ -207,6 +211,8 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
         print("  Use Cathode for downstream Remotion execution of this spike output.")
         return True
 
+    failures = []
+
     # Step 2: Generate images
     print(f"\n[2/4] Generating images...")
     for i, scene in enumerate(scenes):
@@ -217,7 +223,9 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             save_plan(project_dir, new_plan)
         except Exception as e:
             print(f"  ERROR generating image for scene {i}: {e}")
-            # Continue with other scenes
+            failures.append(("image", i, str(e)))
+            scene.pop("image_path", None)
+            save_plan(project_dir, new_plan)
 
     # Step 3: Generate audio
     print(f"\n[3/4] Generating audio...")
@@ -240,7 +248,13 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             save_plan(project_dir, new_plan)
         except Exception as e:
             print(f"  ERROR generating audio for scene {i}: {e}")
-            # Continue with other scenes
+            failures.append(("audio", i, str(e)))
+            scene.pop("audio_path", None)
+            save_plan(project_dir, new_plan)
+
+    if failures:
+        print(f"ERROR: {len(failures)} required assets failed; video assembly stopped")
+        return False
 
     # Step 4: Assemble video
     print(f"\n[4/4] Assembling video...")
@@ -262,7 +276,7 @@ def main():
     parser = argparse.ArgumentParser(description="Batch regenerate patient videos")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
     parser.add_argument("--projects", type=str, help="Comma-separated list of specific projects to process")
-    parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: kokoro, elevenlabs, openai (default: from plan meta or kokoro)")
+    parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: openrouter, elevenlabs, openai (default: supported plan setting or OpenRouter Charon)")
     parser.add_argument("--tts-voice", type=str, default="", help="TTS voice (Kokoro voice id or ElevenLabs voice name)")
     parser.add_argument("--tts-speed", type=float, default=0.0, help="TTS speed (Kokoro or ElevenLabs). 0 means default/from meta.")
     parser.add_argument("--elevenlabs-model-id", type=str, default="", help="ElevenLabs model_id (default eleven_flash_v2_5)")

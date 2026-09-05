@@ -29,6 +29,8 @@ from PIL import Image
 from core.image_gen import edit_image
 from core.scene_modes import plan_has_cathode_motion_scenes
 from core.voice_gen import (
+    DEFAULT_OPENROUTER_VOICE,
+    DEFAULT_SPEED,
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     DEFAULT_ELEVENLABS_STABILITY,
@@ -819,9 +821,9 @@ class QCPublishConfig:
     max_image_changed_ratio: float = 0.25
     fps: int = 24
     output_filename: str = "final_video.mp4"
-    tts_provider: TTSProvider = "kokoro"
-    tts_voice: str = "af_bella"
-    tts_speed: float = 1.1
+    tts_provider: TTSProvider = "openrouter"
+    tts_voice: str = DEFAULT_OPENROUTER_VOICE
+    tts_speed: float = DEFAULT_SPEED
     elevenlabs_model_id: str = DEFAULT_ELEVENLABS_MODEL
     elevenlabs_apply_text_normalization: ElevenLabsTextNormalization = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
     elevenlabs_stability: float = DEFAULT_ELEVENLABS_STABILITY

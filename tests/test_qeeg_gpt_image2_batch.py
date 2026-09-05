@@ -427,3 +427,45 @@ def test_concurrent_portal_publications_use_independent_staging(tmp_path, monkey
         results = list(pool.map(lambda source: mod.publish_to_portal('ZZ_01-01-1900', source), sources))
     assert results[0].read_bytes() in [source.read_bytes() for source in sources]
     assert list(results[0].parent.glob('.*.partial')) == []
+
+
+@pytest.mark.parametrize('produced', [0, 1, 2, 3])
+def test_native_refresh_requires_every_run_bound_image_before_replacing_targets(tmp_path, monkeypatch, produced):
+    import re
+    from PIL import Image
+    from types import SimpleNamespace
+    from core import image_gen
+    mod=_load_module()
+    project=tmp_path/'projects'/'ZZ_01-01-1900';(project/'images').mkdir(parents=True)
+    scenes=[];originals={}
+    for i in range(2):
+        p=project/'images'/f'scene_{i:03d}.png';Image.new('RGB',(32,18),'red').save(p)
+        originals[p]=p.read_bytes();scenes.append({'id':i,'visual_prompt':f'Original prompt {i}','image_path':str(p)})
+    _write_plan(project,{'meta':{},'scenes':scenes})
+    candidate=mod.build_candidate('local-explainer-video',tmp_path,project)
+    monkeypatch.setattr(image_gen,'resolve_codex_runtime',lambda:{'path':'synthetic-codex'})
+    calls=[]
+    original_run = mod.subprocess.run
+    def command(*args, **kwargs):
+        if args[0][0] != "synthetic-codex": return original_run(*args, **kwargs)
+        calls.append(kwargs['input'])
+        match=re.search(r'Copy the generated PNG to ([^\n]+)\.',kwargs['input'])
+        if match and len(calls)<=produced:
+            p=Path(match.group(1));p.parent.mkdir(parents=True,exist_ok=True);Image.new('RGB',(32,18),'blue').save(p)
+        if produced == 3 and len(calls) == 2:
+            (project/'plan.json').write_text((project/'plan.json').read_text()+'\n')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(mod.subprocess,'run',command)
+    if produced != 2:
+        with pytest.raises(RuntimeError):mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
+        assert all(p.read_bytes()==raw for p,raw in originals.items())
+        if produced < 2:
+            count=len(calls)
+            with pytest.raises(RuntimeError):mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
+            assert len(calls)==count, 'unknown dispatch must not automatically repeat paid work'
+    else:
+        result=mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
+        assert result[0]==0 and len(calls)==2
+        assert all(p.read_bytes()!=raw for p,raw in originals.items())
+        mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
+        assert len(calls)==2, 'same run recovers original response receipts without redispatch'

@@ -130,3 +130,49 @@ def test_openai_image_path_carries_the_same_text_discipline(monkeypatch, tmp_pat
 
     assert "only the words this prompt places inside quotation marks" in sent["prompt"]
     assert "invent none" in sent["prompt"]
+
+
+def test_explicit_qwen_uses_original_provider_receipt_and_never_codex_or_openai(monkeypatch, tmp_path):
+    import io
+    from PIL import Image
+    from types import SimpleNamespace
+    from core import image_gen
+    import requests
+    raw = io.BytesIO(); Image.new('RGB', (64, 36), 'navy').save(raw, 'PNG')
+    calls = []
+    def run(model, *, input):
+        calls.append((model, input)); return ['https://synthetic.invalid/qwen.png']
+    monkeypatch.setattr(image_gen, '_get_replicate_client', lambda: SimpleNamespace(run=run))
+    monkeypatch.setattr(requests, 'get', lambda *a, **k: SimpleNamespace(content=raw.getvalue(), raise_for_status=lambda: None))
+    monkeypatch.setattr(image_gen, '_codex_cli_available', lambda: True)
+    monkeypatch.setattr(image_gen, '_run_codex_exec_image', lambda **k: (_ for _ in ()).throw(AssertionError('Qwen dispatched through Codex')))
+    monkeypatch.setattr(image_gen, '_generate_image_openai', lambda **k: (_ for _ in ()).throw(AssertionError('Qwen dispatched through OpenAI')))
+    for prompt in ['original', 'original', 'changed']:
+        path = image_gen.generate_image(prompt, tmp_path/'image.png', model='qwen/qwen-image-2512', target_width=64, target_height=36)
+        assert Image.open(path).size == (64, 36)
+    assert len(calls) == 2
+    assert all(model == 'qwen/qwen-image-2512' and inputs['output_format'] == 'png' for model, inputs in calls)
+
+
+@pytest.mark.parametrize('failure', ['download', 'invalid-image'])
+def test_qwen_acknowledgement_survives_output_download_failure(monkeypatch, tmp_path, failure):
+    import io
+    import requests
+    from PIL import Image
+    from types import SimpleNamespace
+    from core import image_gen
+    calls=[];downloads=[]
+    def run(*a, **k): calls.append(k); return ['https://synthetic.invalid/original.png']
+    monkeypatch.setattr(image_gen,'_get_replicate_client',lambda:SimpleNamespace(run=run))
+    good=io.BytesIO();Image.new('RGB',(32,18),'blue').save(good,'PNG')
+    def get(*a, **k):
+        downloads.append(a)
+        if len(downloads)==1 and failure=='download': raise requests.Timeout('synthetic download timeout')
+        return SimpleNamespace(content=b'not an image' if len(downloads)==1 else good.getvalue(),raise_for_status=lambda:None)
+    monkeypatch.setattr(requests,'get',get)
+    target=tmp_path/'original.png';Image.new('RGB',(32,18),'red').save(target);original=target.read_bytes()
+    with pytest.raises(Exception): image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18)
+    assert target.read_bytes()==original
+    image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18)
+    assert len(calls)==1 and len(downloads)==2
+    assert target.read_bytes()!=original

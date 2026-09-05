@@ -494,39 +494,44 @@ def build_codex_prompt(candidate: ProjectCandidate) -> str:
 
 
 def run_codex_refresh(candidate: ProjectCandidate, *, run_dir: Path, model: str | None) -> tuple[int, Path, Path]:
+    from core.image_gen import build_codex_image_prompt, _run_codex_exec_image
+    from core.generation_receipts import atomic_bytes, atomic_json, digest_bytes
+
     run_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = run_dir / f"{candidate.patient_id}.codex.jsonl"
     final_message_path = run_dir / f"{candidate.patient_id}.final.txt"
-
-    cmd = [
-        "codex",
-        "exec",
-        "--json",
-        "--ignore-user-config",
-        "-C",
-        candidate.repo_root,
-        "-s",
-        "danger-full-access",
-        "-c",
-        'approval_policy="never"',
-        "-o",
-        str(final_message_path),
-    ]
-    if model:
-        cmd.extend(["-m", model])
-    cmd.append("-")
-
-    prompt = build_codex_prompt(candidate)
-    with jsonl_path.open("w", encoding="utf-8") as stdout_handle:
-        proc = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            stdout=stdout_handle,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
-    return proc.returncode, jsonl_path, final_message_path
+    plan_bytes = Path(candidate.plan_path).read_bytes()
+    plan = json.loads(plan_bytes)
+    completed = []
+    for index, scene in enumerate(plan.get("scenes", [])):
+        if not isinstance(scene, dict) or not str(scene.get("visual_prompt") or "").strip():
+            continue
+        target = project_asset_path(candidate, scene.get("image_path"))
+        if target is None:
+            raise ValueError("Required prompt scene has no existing project image")
+        staged = run_dir / candidate.patient_id / f"scene_{index:03d}.png"
+        prompt = build_codex_image_prompt(prompt=scene["visual_prompt"], output_path=staged,
+                                         image_model="gpt-image-2", title=scene.get("title", ""),
+                                         target_width=TARGET_WIDTH, target_height=TARGET_HEIGHT)
+        _run_codex_exec_image(prompt=prompt, output_path=staged, runner_model=model,
+                              target_width=TARGET_WIDTH, target_height=TARGET_HEIGHT)
+        raw = staged.read_bytes()
+        completed.append({"scene_id": scene.get("id", index), "target": str(target),
+                          "staged": str(staged), "sha256": digest_bytes(raw), "size": len(raw)})
+    if not completed:
+        raise ValueError("No prompt scenes to regenerate")
+    # Every output is backed by this run's original request receipt before any
+    # canonical image is replaced. An unchanged old PNG is never success proof.
+    if Path(candidate.plan_path).read_bytes() != plan_bytes:
+        raise RuntimeError("Original scene plan changed during image generation")
+    for output in completed:
+        raw = Path(output["staged"]).read_bytes()
+        if digest_bytes(raw) != output["sha256"]:
+            raise RuntimeError("Generated image changed before publication")
+        atomic_bytes(Path(output["target"]), raw)
+    atomic_json(jsonl_path, {"runDirectory": str(run_dir), "planSha256": digest_bytes(plan_bytes), "outputs": completed})
+    atomic_bytes(final_message_path, ("Verified all original image response receipts\n").encode())
+    return 0, jsonl_path, final_message_path
 
 
 def update_plan_metadata(candidate: ProjectCandidate) -> None:

@@ -445,6 +445,9 @@ def generate_image(
         raise ValueError("Image generation requires a non-empty prompt")
 
     resolved_model = str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL
+    if resolved_model == "qwen/qwen-image-2512":
+        return _generate_image_qwen(prompt=prompt, output_path=output_path, model=resolved_model,
+                                    target_width=target_width, target_height=target_height)
     provider = (os.getenv("LOCAL_EXPLAINER_IMAGE_PROVIDER") or "codex").strip().lower()
     if provider != "openai" and _codex_cli_available():
         codex_prompt = build_codex_image_prompt(
@@ -470,6 +473,48 @@ def generate_image(
         target_width=target_width,
         target_height=target_height,
     )
+
+
+def _generate_image_qwen(*, prompt, output_path, model, target_width, target_height):
+    """The explicit Qwen action uses Replicate and retains its original response."""
+    import io
+    import json
+    import requests
+    from PIL import Image
+
+    inputs = {"prompt": prompt + "\n" + TEXT_DISCIPLINE,
+              "aspect_ratio": "1:1" if target_width == target_height else "9:16" if target_height > target_width else "16:9",
+              "output_format": "png", "go_fast": False}
+    request = {"provider": "replicate", "model": model, "input": inputs,
+               "target_width": target_width, "target_height": target_height}
+
+    def dispatch():
+        output = _get_replicate_client().run(model, input=inputs)
+        items = output if isinstance(output, list) else [output]
+        urls = [str(item.url if hasattr(item, "url") else item) for item in items]
+        if not urls or not urls[0].startswith("https://"):
+            raise RuntimeError("Qwen returned no image URL")
+        return json.dumps(urls).encode()
+
+    # Keep the paid acknowledgement before the separate, retryable output download.
+    response = paid_bytes(request, dispatch, output_path=output_path, key="qwen-provider",
+                          provenance={"provider": "replicate", "model": model})
+    url = json.loads(response)[0]
+    def download():
+        downloaded = requests.get(url, timeout=(5, 60))
+        downloaded.raise_for_status()
+        raw = downloaded.content
+        with Image.open(io.BytesIO(raw)) as image:
+            image.verify()
+        return raw
+
+    # Download recovery repeats only the original free read, never prediction creation.
+    raw = paid_bytes({"source_request": request_digest(request), "url": url}, download,
+                     output_path=output_path, key="qwen-image", recover=download)
+    atomic_bytes(output_path, raw)
+    _ensure_png(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
+    return output_path
 
 
 def _get_replicate_client():
