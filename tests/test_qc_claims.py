@@ -39,3 +39,10 @@ def test_unsupported_claims_fail_with_complete_report(tmp_path, kind, mixed):
     path = tmp_path/'claims.json'; write_claims_report(result, path)
     report = json.loads(path.read_text())
     assert report['total_claims'] == len(claims) and report['failed_claims'] == 1
+
+@pytest.mark.parametrize('predicate', [None, '', 'abvoe', 'not within', 'above below', 'within-ish', 3, ['within']])
+@pytest.mark.parametrize('value', [9,15,21])
+def test_threshold_rejects_unknown_predicates(predicate,value):
+    from core.qc_claims import validate_claims
+    result=validate_claims([{'type':'threshold','metric':'x','claim':predicate,'range':[10,20]}],{'facts':{'x':value}})
+    assert not result.passed and result.errors

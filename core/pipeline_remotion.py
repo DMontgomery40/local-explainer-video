@@ -11,6 +11,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
+import tempfile
 import shutil
 import subprocess
 import sys
@@ -192,26 +194,38 @@ def run_pipeline(
             f.write(f"file '{s.resolve()}'\n")
 
     output = project_dir / f"{project_dir.name}.mp4"
-    cmd = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
-           "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-           "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output)]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-
-    if r.returncode == 0:
+    # Stage beside the canonical output: failed/invalid assembly leaves prior bytes intact.
+    with tempfile.TemporaryDirectory(prefix=".concat-", dir=project_dir) as staging:
+        staged = Path(staging) / "final.mp4"
+        cmd = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+               "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+               "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(staged)]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            raise RuntimeError(f"Final assembly failed: {r.stderr[-200:]}")
+        if not staged.is_file() or staged.stat().st_size == 0:
+            raise RuntimeError("Final assembly produced no video")
         probe = subprocess.run(
-            [ffprobe, "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(output)],
+            [ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(staged)],
             capture_output=True, text=True, timeout=15)
-        dur = float(probe.stdout.strip())
-        mb = output.stat().st_size / (1024 * 1024)
-        mins, secs = int(dur // 60), int(dur % 60)
-        _phase(f"DONE: {output.name}")
-        _log(f"Duration: {mins}:{secs:02d}")
-        _log(f"Size: {mb:.1f} MB")
-        _log(f"Scenes: {len(segments)}/{len(scenes)}")
-        return output
-    else:
-        _log(f"Assembly failed: {r.stderr[-200:]}")
-        return plan_path
+        if probe.returncode != 0:
+            raise RuntimeError("Final assembly failed media validation")
+        media = json.loads(probe.stdout)
+        dur = float(media.get("format", {}).get("duration", 0))
+        streams = media.get("streams", [])
+        video = any(item.get("codec_type") == "video" and item.get("width", 0) > 0
+                    and item.get("height", 0) > 0 for item in streams)
+        audio = any(item.get("codec_type") == "audio" for item in streams)
+        if not math.isfinite(dur) or dur <= 0 or not video or not audio:
+            raise ValueError("Final assembly must contain video, narration audio and positive duration")
+        mb = staged.stat().st_size / (1024 * 1024)
+        staged.replace(output)
+    mins, secs = int(dur // 60), int(dur % 60)
+    _phase(f"DONE: {output.name}")
+    _log(f"Duration: {mins}:{secs:02d}")
+    _log(f"Size: {mb:.1f} MB")
+    _log(f"Scenes: {len(segments)}/{len(scenes)}")
+    return output
 
 
 def _generate_scene_code_with_timing(

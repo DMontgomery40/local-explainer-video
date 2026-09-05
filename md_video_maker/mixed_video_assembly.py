@@ -79,16 +79,17 @@ def _archive_existing_video(output_path: Path, project_dir: Path) -> Path | None
     return dest
 
 
-def _filter() -> str:
+def _filter(target_width: int = TARGET_WIDTH, target_height: int = TARGET_HEIGHT) -> str:
     return (
-        f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,"
-        f"pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"
         "setsar=1,fps=24,format=yuv420p"
     )
 
 
 def _make_still_segment(
-    scene: dict[str, Any], project_dir: Path, audio_path: Path, out_path: Path, seconds: float
+    scene: dict[str, Any], project_dir: Path, audio_path: Path, out_path: Path, seconds: float,
+    target_width: int = TARGET_WIDTH, target_height: int = TARGET_HEIGHT,
 ) -> None:
     image_path = _resolve_plan_path(
         project_dir,
@@ -114,7 +115,7 @@ def _make_still_segment(
             "-t",
             f"{seconds:.3f}",
             "-vf",
-            _filter(),
+            _filter(target_width, target_height),
             "-map",
             "0:v:0",
             "-map",
@@ -145,7 +146,8 @@ def _make_still_segment(
 
 
 def _make_video_segment(
-    scene: dict[str, Any], project_dir: Path, audio_path: Path, out_path: Path, seconds: float
+    scene: dict[str, Any], project_dir: Path, audio_path: Path, out_path: Path, seconds: float,
+    target_width: int = TARGET_WIDTH, target_height: int = TARGET_HEIGHT,
 ) -> None:
     video_path = _resolve_plan_path(project_dir, str(scene.get("video_source_path") or ""))
     if not video_path.exists():
@@ -171,7 +173,7 @@ def _make_video_segment(
             "-t",
             f"{seconds:.3f}",
             "-vf",
-            _filter(),
+            _filter(target_width, target_height),
             "-map",
             "0:v:0",
             "-map",
@@ -209,6 +211,7 @@ def assemble_mixed_video(
     scenes: list[dict[str, Any]],
     project_dir: Path,
     output_filename: str = "final_video.mp4",
+    *, target_width: int = TARGET_WIDTH, target_height: int = TARGET_HEIGHT,
 ) -> Path:
     project_dir = Path(project_dir)
     output_path = project_dir / output_filename
@@ -230,9 +233,9 @@ def assemble_mixed_video(
             seconds = duration(audio_path)
             segment_path = segment_dir / f"segment_{idx:03d}.mp4"
             if scene.get("video_source_path"):
-                _make_video_segment(scene, project_dir, audio_path, segment_path, seconds)
+                _make_video_segment(scene, project_dir, audio_path, segment_path, seconds, target_width, target_height)
             else:
-                _make_still_segment(scene, project_dir, audio_path, segment_path, seconds)
+                _make_still_segment(scene, project_dir, audio_path, segment_path, seconds, target_width, target_height)
             segment_paths.append(segment_path)
 
         list_path = project_dir / "_mixed_segments.txt"

@@ -208,7 +208,10 @@ def _validate_threshold(
     """Validate a threshold claim: is the value within/outside the stated range?"""
     scene_id = claim.get("scene_id", "?")
     metric = str(claim.get("metric", ""))
-    threshold_claim = str(claim.get("claim", "")).lower()
+    threshold_claim = str(claim.get("claim", "")).strip().lower()
+    if threshold_claim not in {"within", "above", "below", "outside"}:
+        return ClaimResult(scene_id, "threshold", metric, False,
+                           f"Unsupported threshold predicate: {claim.get('claim')!r}")
     range_val = claim.get("range", [])
 
     actual = _to_float(_resolve_metric_in_data_pack(data_pack, metric))
@@ -228,21 +231,18 @@ def _validate_threshold(
 
     in_range = low <= actual <= high
 
-    if "within" in threshold_claim:
+    if threshold_claim == "within":
         ok = in_range
         detail = f"Claimed within [{low}, {high}], actual={actual}, in_range={in_range}"
-    elif "above" in threshold_claim:
+    elif threshold_claim == "above":
         ok = actual > high
         detail = f"Claimed above {high}, actual={actual}"
-    elif "below" in threshold_claim:
+    elif threshold_claim == "below":
         ok = actual < low
         detail = f"Claimed below {low}, actual={actual}"
-    elif "outside" in threshold_claim:
+    else:
         ok = not in_range
         detail = f"Claimed outside [{low}, {high}], actual={actual}, in_range={in_range}"
-    else:
-        ok = in_range  # default: assume "within"
-        detail = f"Assumed within [{low}, {high}], actual={actual}, in_range={in_range}"
 
     return ClaimResult(scene_id, "threshold", metric, ok, detail)
 

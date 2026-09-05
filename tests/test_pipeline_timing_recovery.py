@@ -177,3 +177,35 @@ def test_remotion_cli_without_input_retains_existing_plan_mode(tmp_path, monkeyp
     calls=[]; monkeypatch.setattr(pipeline,'run_pipeline',lambda *a,**k:calls.append(k))
     pipeline.main([str(tmp_path)])
     assert calls[0]['input_text'] is None
+
+@pytest.mark.parametrize('failure', ['exit','timeout','missing','empty','probe-error','bad-duration','no-audio','success'])
+def test_final_concat_is_staged_and_preserves_prior_on_failure(tmp_path,monkeypatch,failure):
+    from core import pipeline_remotion as pipeline,remotion_bridge
+    (tmp_path/'audio').mkdir();(tmp_path/'audio/scene_000.wav').write_bytes(b'audio')
+    (tmp_path/'plan.json').write_text(json.dumps({'scenes':[{'scene_code':'code','narration':'speech'}]}))
+    prior=tmp_path/f'{tmp_path.name}.mp4';prior.write_bytes(b'prior')
+    monkeypatch.setattr(pipeline,'_generate_scene_code_with_timing',lambda *a:None)
+    monkeypatch.setattr(remotion_bridge,'duration_frames',lambda *a:30)
+    monkeypatch.setattr(remotion_bridge,'render_dynamic_scene',lambda **kw:kw['output_path'].write_bytes(b'clip'))
+    staged=[]
+    def run(cmd,**kwargs):
+        if 'concat' in cmd:
+            target=Path(cmd[-1]);staged.append(target)
+            if failure=='timeout':raise pipeline.subprocess.TimeoutExpired(cmd,300)
+            if failure!='missing':target.write_bytes(b'' if failure=='empty' else b'new')
+            return type('Result',(),{'returncode':1 if failure=='exit' else 0,'stderr':'failed'})()
+        if '-show_streams' in cmd:
+            value={'format':{'duration':'nan' if failure=='bad-duration' else '1'},'streams':[{'codec_type':'video','width':64,'height':36}]+([] if failure=='no-audio' else [{'codec_type':'audio'}])}
+            return type('Result',(),{'returncode':1 if failure=='probe-error' else 0,'stdout':json.dumps(value),'stderr':''})()
+        # Existing code's old CSV probe; allow baseline to reach assertions.
+        if '-show_entries' in cmd:return type('Result',(),{'returncode':0,'stdout':'1','stderr':''})()
+        Path(cmd[-1]).write_bytes(b'segment')
+        return type('Result',(),{'returncode':0,'stderr':''})()
+    monkeypatch.setattr(pipeline.subprocess,'run',run)
+    if failure=='success':assert pipeline.run_pipeline(tmp_path,skip_tts=True,skip_whisper=True)==prior
+    else:
+        with pytest.raises((RuntimeError,ValueError,pipeline.subprocess.TimeoutExpired)):pipeline.run_pipeline(tmp_path,skip_tts=True,skip_whisper=True)
+        assert prior.read_bytes()==b'prior'
+    assert staged and staged[0]!=prior
+    assert not staged[0].exists()
+    if failure=='success':assert prior.read_bytes()==b'new'

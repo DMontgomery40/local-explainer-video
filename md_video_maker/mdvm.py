@@ -693,7 +693,8 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
 
     output_name = f".{project_dir.name}.{uuid4().hex}.mp4"
     if any(scene.get("video_source_path") for scene in scenes):
-        video_path = assemble_mixed_video(scenes, project_dir, output_filename=output_name)
+        video_path = assemble_mixed_video(scenes, project_dir, output_filename=output_name,
+                                          target_width=target_width, target_height=target_height)
     else:
         video_path = assemble_video(
             scenes,
