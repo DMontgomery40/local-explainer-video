@@ -17,7 +17,8 @@ class V2EncodeTest(unittest.TestCase):
                 wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(24000);wav.writeframes(b'\0\0'*12000)
             output=root/'output.mp4';original=clip.read_bytes();output.write_bytes(original)
             with patch.object(video,'_pick_encoder',return_value=(['-c:v','libx264','-pix_fmt','yuv420p'],'libx264')):
-                self.assertEqual(video.assemble_v2_video([{'clip_path':str(clip),'audio_path':str(audio)}],root,output_filename='output.mp4'),output)
-            self.assertGreater(video._get_media_duration(output),0)
+                self.assertEqual(video.assemble_v2_video([{'clip_path':str(clip),'audio_path':str(audio)}] * 3,root,output_filename='output.mp4'),output)
+            self.assertGreater(video._get_media_duration(output),1.4)
             self.assertTrue(any(p.read_bytes()==original for p in (root/'.v1-videos').glob('*')))
             self.assertFalse(list(root.glob('.v2-concat-*')))
+            self.assertFalse(list(root.glob('.v2-segments-*')))
