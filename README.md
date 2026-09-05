@@ -69,12 +69,15 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 Create a `.env` (or export env vars) and add your keys:
 ```
+OPENROUTER_API_KEY=...        # Required for default Gemini Charon TTS
 OPENAI_API_KEY=sk-...          # Optional: for GPT-based director or TTS fallback
 ANTHROPIC_API_KEY=sk-ant-...   # Optional: for Claude-based director
 REPLICATE_API_TOKEN=r8_...     # Required: for image generation
 DASHSCOPE_API_KEY=sk-...       # Optional: for DashScope Qwen image editing (qwen-image-edit-max/plus)
 DASHSCOPE_REGION=SINGAPORE     # Optional: SINGAPORE (default) or BEIJING (keys/endpoints are region-specific)
 ELEVENLABS_API_KEY=...         # Optional: required only if you select ElevenLabs TTS
+REMOTION_SKILL_ID=skill_...    # Optional: attach your Anthropic custom Remotion skill in director.py
+REMOTION_SKILL_VERSION=latest  # Optional: pin a specific skill version instead of latest
 
 # Optional overrides for which model is used when editing existing images (UI "Edit Image" + QC auto-fix)
 IMAGE_EDIT_MODEL=qwen-image-edit-max   # or: qwen/qwen-image-edit-2511
@@ -91,6 +94,10 @@ CLAUDE_LOCAL_REMOTION_USE_API_KEY=false
 
 You need at least one of OpenAI or Anthropic for the director agent.
 
+If you want the direct Claude API path to have access to your full Anthropic-hosted Remotion custom skill, set `REMOTION_SKILL_ID` to the remote `skill_...` id from Anthropic. A local Codex/Claude skill install helps us follow the right API pattern, but the API call itself still needs the remote Anthropic custom skill id.
+
+Provision the custom skill in your Anthropic account, then set its returned identifier in
+`REMOTION_SKILL_ID`. The remote skill and its upload tooling are managed separately from this repository.
 For the separate local Claude CLI storyboard lane, `CLAUDE_LOCAL_REMOTION_USE_API_KEY` defaults to `false`, so the helper
 prefers Claude Code subscription auth and strips `ANTHROPIC_API_KEY` unless you explicitly opt back into API-key billing.
 
@@ -206,7 +213,7 @@ before publishing an MP4 to the clinician portal sync folder.
 
 **What it does**
 - Loads ground truth from qEEG Council (Stage 4 consolidation + Stage 1 `_data_pack.json`)
-- Uses a judge model (Claude Opus 4.6) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
+- Uses a judge model (Claude Opus 4.5) to flag contradictions/wrong patient-data numbers (ELI5-friendly, liberal on analogies)
 - Uses Gemini vision to find misspelled words / wrong patient numbers *in the rendered slide images*
 - By default, visual QC runs in **check-only mode** (no automated image edits). When issues are found it writes:
   - `projects/<PROJECT>/qc_visual_issues.json`
@@ -232,9 +239,9 @@ Notes:
 Or run it from the CLI:
 
 ```bash
-python3.10 qc_publish.py --project 09-23-1982-0            # check-only
-python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images
-python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images --image-edit-model qwen-image-edit-max
+python3.10 qc_publish.py --project ZZ_01-01-1900            # check-only
+python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images
+python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images --image-edit-model qwen-image-edit-max
 ```
 
 Batch mode (latest version per patient, valid patient IDs only):

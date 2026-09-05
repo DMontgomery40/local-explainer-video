@@ -26,6 +26,10 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.agents/
+remotion/node_modules/
+remotion/projects/
+
 
 # Virtual environments
 venv/
@@ -47,3 +51,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Experiments
+experiments/
+
+# Isolated clinic renderer environment
+.renderer-venv/

@@ -9,19 +9,23 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.29.2",
+    "@react-three/fiber": "^9.5.0",
     "@remotion/cli": "^4.0.0",
     "@remotion/layout-utils": "^4.0.0",
     "@remotion/light-leaks": "^4.0.441",
     "@remotion/media": "^4.0.0",
     "@remotion/paths": "^4.0.441",
+    "@remotion/three": "^4.0.441",
     "@remotion/transitions": "^4.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "remotion": "^4.0.0",
+    "three": "^0.183.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
+    "@types/three": "^0.183.1",
     "typescript": "^5.7.0"
   }
 }

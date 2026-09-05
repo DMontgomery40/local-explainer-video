@@ -28,3 +28,153 @@ def test_qc_and_publish_project_rejects_motion_scenes_before_loading_ground_trut
             patient_id="01-01-1983-0",
             config=config,
         )
+
+
+def test_infer_patient_id_reads_the_canonical_clinic_id_off_a_project_folder():
+    """The renderer publishes into portal_patients/<clinic id>/, so it has to
+    recognise the id the clinic actually uses — initials, date of birth, and a
+    collision ordinal that starts at 2."""
+    from core.qc_publish import infer_patient_id
+
+    assert infer_patient_id("BT_12-11-1963") == "BT_12-11-1963"
+    # A tenth collision is two digits and must not be truncated or refused.
+    assert infer_patient_id("DK_08-10-1989_10") == "DK_08-10-1989_10"
+    # The renderer's own repeat-project suffix still comes off cleanly.
+    assert infer_patient_id("BT_12-11-1963__02") == "BT_12-11-1963"
+    assert infer_patient_id("DK_08-10-1989_10__02") == "DK_08-10-1989_10"
+
+
+def test_infer_patient_id_refuses_what_is_not_a_clinic_id():
+    from core.qc_publish import infer_patient_id
+
+    # The retired date-of-birth key is not an id any runtime accepts now.
+    assert infer_patient_id("12-11-1963-0") is None
+    # `_1` never exists: ordinal one is the unsuffixed form.
+    assert infer_patient_id("BT_12-11-1963_1") is None
+    assert infer_patient_id("scratch-project") is None
+    assert infer_patient_id("") is None
+
+
+def test_batch_regenerate_selects_projects_through_the_shared_reader(tmp_path, capsys):
+    """Both entry points have to agree on what a patient project looks like, or
+    a render reachable from one is invisible to the other — so batch_regenerate
+    uses the same reader rather than its own copy of the pattern."""
+    import batch_regenerate
+
+    projects = tmp_path / "projects"
+    for name in ("BT_12-11-1963", "DK_08-10-1989_10", "12-11-1963-0"):
+        (projects / name).mkdir(parents=True)
+        (projects / name / "plan.json").write_text("{}")
+    batch_regenerate.PROJECTS_DIR = projects
+
+    found = [p.name for p in batch_regenerate.get_valid_patient_projects()]
+
+    assert found == ["BT_12-11-1963", "DK_08-10-1989_10"]
+    # The legacy-named project is named, not silently dropped.
+    assert "skipping 12-11-1963-0" in capsys.readouterr().out
+
+
+def test_split_project_name_separates_patient_from_repeat_project_and_video():
+    """`_2` belongs to the patient. `__02` is a repeat project for that same
+    patient, and `_v4` a video revision — neither changes who this is."""
+    from core.qc_publish import split_project_name
+
+    assert split_project_name("BT_12-11-1963_2__02") == ("BT_12-11-1963_2", 2, None)
+    assert split_project_name("BT_12-11-1963__02") == ("BT_12-11-1963", 2, None)
+    assert split_project_name("BT_12-11-1963_2__02__03") == ("BT_12-11-1963_2", 3, None)
+    assert split_project_name("DK_08-10-1989_10_v4") == ("DK_08-10-1989_10", None, 4)
+    assert split_project_name("BT_12-11-1963") == ("BT_12-11-1963", None, None)
+    # A legacy name yields no patient, but still reports what it could strip.
+    assert split_project_name("02-25-1988-0__02")[0] is None
+
+
+def test_every_entry_point_reads_the_patient_id_through_one_module():
+    """Two readers is how this started: the batch script's copy had already
+    drifted to a case-insensitive, decimal-tolerant video suffix, so
+    `BT_12-11-1963_V4` resolved to a patient in one and to nothing in the
+    other. They are the same function object now, so they cannot disagree."""
+    import importlib.util
+    from pathlib import Path
+
+    from core import patient_id as shared
+    from core.qc_publish import infer_patient_id as qc_reader
+    import batch_regenerate
+
+    import sys
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "qeeg_gpt_image2_batch.py"
+    spec = importlib.util.spec_from_file_location("batch_mod", script)
+    batch_mod = importlib.util.module_from_spec(spec)
+    # Its dataclasses resolve their annotations through sys.modules.
+    sys.modules[spec.name] = batch_mod
+    spec.loader.exec_module(batch_mod)
+
+    assert qc_reader is shared.infer_patient_id
+    assert batch_regenerate.infer_patient_id is shared.infer_patient_id
+    assert batch_mod.infer_patient_id is shared.infer_patient_id
+
+    # And the case the two copies actually disagreed on now has one answer.
+    for name in ("BT_12-11-1963_V4", "BT_12-11-1963_v4.1"):
+        assert qc_reader(name) == batch_mod.infer_patient_id(name) == "BT_12-11-1963"
+
+def test_explicit_qwen_batch_passes_recorded_model(tmp_path, monkeypatch):
+    import json
+    import batch_regenerate as batch
+    (tmp_path/'plan.json').write_text(json.dumps({'meta':{'input_text':'synthetic','tts_provider':'elevenlabs'}}))
+    monkeypatch.setattr(batch,'ARGS',{})
+    monkeypatch.setattr(batch,'generate_storyboard',lambda *a,**k:[{'id':0,'title':'one','narration':'one','visual_prompt':'one'}])
+    calls=[]
+    monkeypatch.setattr(batch,'generate_scene_image',lambda *a,**k:calls.append(k) or tmp_path/'one.png')
+    monkeypatch.setattr(batch,'generate_scene_audio',lambda *a,**k:tmp_path/'one.wav')
+    monkeypatch.setattr(batch,'assemble_video',lambda *a,**k:tmp_path/'one.mp4')
+    assert batch.regenerate_project(tmp_path)
+    plan=json.loads((tmp_path/'plan.json').read_text())
+    assert calls[0]['model']==plan['meta']['image_model']=='qwen/qwen-image-2512'
+
+
+@pytest.mark.parametrize('provider', [None, 'kokoro', 'openrouter', 'openai', 'elevenlabs'])
+def test_batch_speech_uses_supported_provider_defaults(tmp_path, monkeypatch, provider):
+    import json
+    import batch_regenerate as batch
+    meta = {'input_text': 'synthetic'}
+    if provider: meta.update(tts_provider=provider)
+    if provider == 'kokoro': meta.update(tts_voice='af_bella', tts_speed=1.1)
+    (tmp_path/'plan.json').write_text(json.dumps({'meta': meta}))
+    monkeypatch.setattr(batch, 'ARGS', {})
+    monkeypatch.setattr(batch, 'generate_storyboard', lambda *a, **k: [{'id': 0, 'narration': 'speech', 'visual_prompt': 'image'}])
+    monkeypatch.setattr(batch, 'generate_scene_image', lambda *a, **k: tmp_path/'image.png')
+    captured=[]
+    monkeypatch.setattr(batch, 'generate_scene_audio', lambda *a, **k: captured.append(k) or tmp_path/'audio.wav')
+    monkeypatch.setattr(batch, 'assemble_video', lambda *a, **k: tmp_path/'video.mp4')
+    assert batch.regenerate_project(tmp_path)
+    expected = 'openrouter' if provider in (None, 'kokoro') else provider
+    assert captured[0]['tts_provider'] == expected
+    if expected == 'openrouter': assert (captured[0]['voice'],captured[0]['speed']) == ('Charon',1.0)
+
+
+@pytest.mark.parametrize('failed_stage', ['image', 'audio'])
+def test_batch_required_asset_failure_cannot_assemble_silent_or_stale_scenes(tmp_path, monkeypatch, failed_stage):
+    import json
+    import batch_regenerate as batch
+    (tmp_path/'plan.json').write_text(json.dumps({'meta': {'input_text': 'synthetic'}}))
+    prior=tmp_path/(tmp_path.name+'.mp4');prior.write_bytes(b'completed original')
+    monkeypatch.setattr(batch, 'ARGS', {})
+    monkeypatch.setattr(batch, 'generate_storyboard', lambda *a, **k: [{'id': i, 'narration': 'speech', 'visual_prompt': 'image'} for i in range(2)])
+    called=[]
+    def generate(scene, *args, **kwargs):
+        called.append(scene['id'])
+        if scene['id'] == 1: raise RuntimeError('synthetic required asset failure')
+        return tmp_path/'asset'
+    monkeypatch.setattr(batch, 'generate_scene_'+failed_stage, generate)
+    other='audio' if failed_stage == 'image' else 'image'
+    monkeypatch.setattr(batch, 'generate_scene_'+other, lambda *a, **k: tmp_path/'asset')
+    monkeypatch.setattr(batch, 'assemble_video', lambda *a, **k: pytest.fail('assembled incomplete required assets'))
+    assert batch.regenerate_project(tmp_path) is False
+    assert called == [0,1]
+    assert prior.read_bytes() == b'completed original'
+
+
+def test_qc_safe_narration_repair_defaults_to_supported_clinic_voice(tmp_path):
+    from core.qc_publish import QCPublishConfig
+    cfg=QCPublishConfig(qeeg_dir=tmp_path, backend_url="http://127.0.0.1:1", cliproxy_url="http://127.0.0.1:1", cliproxy_api_key="")
+    assert (cfg.tts_provider,cfg.tts_voice,cfg.tts_speed) == ('openrouter','Charon',1.0)

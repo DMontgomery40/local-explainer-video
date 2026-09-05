@@ -8,3 +8,4 @@ export { DataStage } from "./DataStage";
 export { AnalogySplit } from "./AnalogySplit";
 export { ClosingCta } from "./ClosingCta";
 export { NarrationSlide } from "./NarrationSlide";
+export { Brain3DScene } from "./Brain3DScene";

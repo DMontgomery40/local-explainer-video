@@ -29,6 +29,8 @@ from PIL import Image
 from core.image_gen import edit_image
 from core.scene_modes import plan_has_cathode_motion_scenes
 from core.voice_gen import (
+    DEFAULT_OPENROUTER_VOICE,
+    DEFAULT_SPEED,
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     DEFAULT_ELEVENLABS_STABILITY,
@@ -42,18 +44,19 @@ from core.voice_gen import (
 from core.video_assembly import assemble_video
 
 
-_PATIENT_ID_RE = re.compile(r"^(?P<mm>\d{2})-(?P<dd>\d{2})-(?P<yyyy>\d{4})-(?P<n>\d+)$")
-_PATIENT_ID_PREFIX_RE = re.compile(r"^(?P<pid>\d{2}-\d{2}-\d{4}-\d+)(?:__\d+)?$")
-
-
-def infer_patient_id(project_name: str) -> str | None:
-    """Infer MM-DD-YYYY-N from a project folder name (supports __02 suffix)."""
-    raw = (project_name or "").strip()
-    m = _PATIENT_ID_PREFIX_RE.match(raw)
-    if not m:
-        return None
-    pid = m.group("pid")
-    return pid if _PATIENT_ID_RE.match(pid) else None
+# The one reader for the clinic patient ID, shared with the standalone batch
+# scripts so there is no second copy to drift.
+from core.qeeg_env import (  # noqa: F401  (re-exported for callers)
+    default_cliproxy_url,
+    default_qeeg_analysis_dir,
+    default_qeeg_backend_url,
+)
+from core.patient_id import (  # noqa: F401  (re-exported for callers)
+    PATIENT_ID_RE as _PATIENT_ID_RE,
+    infer_patient_id,
+    is_patient_id,
+    split_project_name,
+)
 
 
 def extract_quoted_texts(prompt: str) -> list[str]:
@@ -135,21 +138,6 @@ def image_change_metrics(
 def _repo_root() -> Path:
     # core/qc_publish.py -> core/ -> repo root
     return Path(__file__).resolve().parents[1]
-
-
-def default_qeeg_analysis_dir() -> Path:
-    env = os.getenv("QEEG_ANALYSIS_DIR")
-    if env:
-        return Path(env).expanduser().resolve()
-    return (_repo_root().parent / "qEEG-analysis").resolve()
-
-
-def default_qeeg_backend_url() -> str:
-    return os.getenv("QEEG_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-
-
-def default_cliproxy_url() -> str:
-    return os.getenv("CLIPROXY_BASE_URL", "http://127.0.0.1:8317").rstrip("/")
 
 
 def default_cliproxy_api_key() -> str:
@@ -833,9 +821,9 @@ class QCPublishConfig:
     max_image_changed_ratio: float = 0.25
     fps: int = 24
     output_filename: str = "final_video.mp4"
-    tts_provider: TTSProvider = "kokoro"
-    tts_voice: str = "af_bella"
-    tts_speed: float = 1.1
+    tts_provider: TTSProvider = "openrouter"
+    tts_voice: str = DEFAULT_OPENROUTER_VOICE
+    tts_speed: float = DEFAULT_SPEED
     elevenlabs_model_id: str = DEFAULT_ELEVENLABS_MODEL
     elevenlabs_apply_text_normalization: ElevenLabsTextNormalization = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
     elevenlabs_stability: float = DEFAULT_ELEVENLABS_STABILITY

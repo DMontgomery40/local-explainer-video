@@ -12,17 +12,39 @@ import os
 import shutil
 import subprocess
 import sys
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from core.scene_modes import scene_is_cathode_motion
+from core.generation_receipts import paid_bytes, status_code, atomic_bytes, request_digest, image_generation_action, current_asset_directory
 
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
 TARGET_ASPECT_RATIO = "16:9"
 TARGET_SIZE_DASHSCOPE = f"{TARGET_WIDTH}*{TARGET_HEIGHT}"
 DEFAULT_IMAGE_GEN_MODEL = "gpt-image-2"
+
+# The one rule that stops prompt text becoming picture text.
+#
+# A visual prompt ends with art direction — "premium medical infographic, luminous
+# and precise". When that trails a corner-label instruction with nothing closing the
+# label, the image model reads the whole tail as the caption to paint, and then
+# invents a brand emblem to sit beside it because the result reads like a logo
+# lockup. Fourteen of fourteen slides in AN_04-08-1986's explainer shipped that way:
+# the patient identifier followed by the style sentence, under a different made-up
+# crest each time. Nobody ever asked for either. The identifier alone is wanted and
+# useful; everything else on that label is a bug.
+#
+# Stated positively and applied to every image, this holds whatever the planner wrote.
+TEXT_DISCIPLINE = (
+    "Render as on-screen text only the words this prompt places inside quotation marks. "
+    "Words describing style, finish, quality or mood are art direction for how the picture "
+    "should look — express them in the artwork and never draw them as letters. "
+    "Draw only the logos, emblems, badges, crests or brand marks this prompt explicitly asks "
+    "for; invent none."
+)
 
 _DASHSCOPE_ENDPOINT_SINGAPORE = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 _DASHSCOPE_ENDPOINT_BEIJING = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
@@ -37,17 +59,59 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+_runtime_scope: ContextVar = ContextVar("codex_runtime_scope", default=None)
+
+
+@contextmanager
+def codex_runtime_scope():
+    token = _runtime_scope.set({})
+    try:
+        yield
+    finally:
+        _runtime_scope.reset(token)
+
+
+def resolve_codex_runtime() -> dict[str, str]:
+    """Check the configured executable or working PATH candidates per job."""
+    scope = _runtime_scope.get()
+    if scope is not None and "runtime" in scope:
+        return scope["runtime"]
+    configured = (os.getenv("CODEX_BINARY") or "").strip()
+    candidates = ([str(Path(configured).expanduser())] if configured else
+                  [str(Path(entry) / "codex") for entry in os.get_exec_path()])
+    failures = []
+    for candidate in dict.fromkeys(candidates):
+        resolved = shutil.which(candidate)
+        if not resolved:
+            failures.append(candidate)
+            continue
+        try:
+            result = subprocess.run([resolved, "--version"], capture_output=True,
+                                    text=True, timeout=15, check=True)
+            version = result.stdout.strip()
+            if not version:
+                raise RuntimeError("Empty version output")
+            runtime = {"path": str(Path(resolved).absolute()), "version": version}
+            if scope is not None:
+                scope["runtime"] = runtime
+            return runtime
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            failures.append(candidate)
+    if configured:
+        raise RuntimeError(f"Configured Codex executable failed its version check: {configured}")
+    raise FileNotFoundError("No working Codex executable on PATH")
+
+
 def _codex_binary() -> str:
-    return (os.getenv("CODEX_BINARY") or "codex").strip()
+    return resolve_codex_runtime()["path"]
 
 
 def _codex_cli_available() -> bool:
-    binary = _codex_binary()
-    if not binary:
+    try:
+        resolve_codex_runtime()
+        return True
+    except FileNotFoundError:
         return False
-    if os.sep in binary:
-        return Path(binary).expanduser().exists()
-    return shutil.which(binary) is not None
 
 
 def _codex_runner_model() -> str | None:
@@ -84,37 +148,58 @@ def _ensure_png(path: Path) -> Path:
     return path
 
 
-def _normalize_image_to_target(path: Path) -> tuple[int, int]:
+def _target_aspect_ratio(width: int, height: int) -> str:
+    if width == 1080 and height == 1920:
+        return "9:16"
+    if width == TARGET_WIDTH and height == TARGET_HEIGHT:
+        return TARGET_ASPECT_RATIO
+    return f"{width}:{height}"
+
+
+def _render_constraint_text(width: int, height: int) -> str:
+    aspect = _target_aspect_ratio(width, height)
+    if height > width:
+        return (
+            f"portrait {aspect}, vertical phone-first frame, target frame {width}x{height}, "
+            "no square composition, no landscape composition, keep all text and important graphics fully visible inside safe margins"
+        )
+    return (
+        f"landscape {aspect}, widescreen slide, target frame {width}x{height}, "
+        "no square composition, no portrait composition, keep all text and important graphics fully visible inside safe margins"
+    )
+
+
+def _normalize_image_to_target(path: Path, width: int = TARGET_WIDTH, height: int = TARGET_HEIGHT) -> tuple[int, int]:
     from PIL import Image, ImageFilter, ImageOps
 
     with Image.open(path) as img:
         source = img.convert("RGB")
         original_size = source.size
 
-        if original_size == (TARGET_WIDTH, TARGET_HEIGHT):
+        if original_size == (width, height):
             return original_size
 
         background = ImageOps.fit(
             source,
-            (TARGET_WIDTH, TARGET_HEIGHT),
+            (width, height),
             method=Image.Resampling.LANCZOS,
             centering=(0.5, 0.5),
         )
         background = background.filter(ImageFilter.GaussianBlur(radius=28))
         background = Image.blend(
             background,
-            Image.new("RGB", (TARGET_WIDTH, TARGET_HEIGHT), (0, 0, 0)),
+            Image.new("RGB", (width, height), (0, 0, 0)),
             0.32,
         )
 
         foreground = ImageOps.contain(
             source,
-            (TARGET_WIDTH, TARGET_HEIGHT),
+            (width, height),
             method=Image.Resampling.LANCZOS,
         )
         offset = (
-            (TARGET_WIDTH - foreground.width) // 2,
-            (TARGET_HEIGHT - foreground.height) // 2,
+            (width - foreground.width) // 2,
+            (height - foreground.height) // 2,
         )
         background.paste(foreground, offset)
         background.save(path, format="PNG", optimize=True)
@@ -137,6 +222,8 @@ def build_codex_image_prompt(
     output_path: Path,
     image_model: str = DEFAULT_IMAGE_GEN_MODEL,
     title: str = "",
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
 ) -> str:
     trimmed_title = str(title or "").strip()
     title_line = f"Scene title: {trimmed_title}\n" if trimmed_title else ""
@@ -145,13 +232,15 @@ def build_codex_image_prompt(
         "Use only Codex's built-in native image generation capability in this session.\n"
         "Do not use skill scripts, wrappers, Python API clients, or any API-key-based image generation workflow.\n"
         "Do not inspect `~/.codex/skills`, `.env` files, config files, or search the filesystem for `OPENAI_API_KEY` or any other secret.\n"
+        "Do not search `/tmp`, `/var/folders`, Downloads, Desktop, this repo, or any other folder for recent PNGs. Use only the image artifact you generate in this turn.\n"
         "If the built-in native image generation capability is unavailable, stop immediately and fail.\n\n"
         f"{title_line}"
         "Generate exactly one still PNG from the following prompt.\n"
         f"- Image model: {image_model}\n"
-        f"- Fixed render constraints: landscape {TARGET_ASPECT_RATIO}, widescreen slide, target frame {TARGET_WIDTH}x{TARGET_HEIGHT}, no square composition, no portrait composition, keep all text and important graphics fully visible inside safe margins.\n"
+        f"- Fixed render constraints: {_render_constraint_text(target_width, target_height)}.\n"
         "- Use the existing prompt text as the core content prompt. Do not otherwise rewrite, summarize, or refine it.\n"
         "- Any quoted on-screen text or branded term must be rendered exactly and case-sensitively.\n"
+        f"- {TEXT_DISCIPLINE}\n"
         f"- Copy the generated PNG to {output_path}.\n"
         "- Do not modify any other repo files.\n"
         f"- After finishing, verify {output_path} exists and report its file size and dimensions.\n\n"
@@ -160,16 +249,22 @@ def build_codex_image_prompt(
     )
 
 
+@image_generation_action
 def _run_codex_exec_image(
     *,
     prompt: str,
     output_path: Path,
     runner_model: str | None = None,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
 ) -> Path:
-    if not _codex_cli_available():
-        raise RuntimeError(
-            "Local Codex CLI is not available. Install/configure `codex` before generating still images."
-        )
+    runtime = resolve_codex_runtime()
+    # This file belongs to this exact intended invocation, never a canonical PNG.
+    identity = {"provider": "codex", "prompt": prompt, "runner_model": runner_model or _codex_runner_model(),
+                "width": target_width, "height": target_height}
+    raw_path = current_asset_directory() / "codex-output" / request_digest(identity) / "raw.png"
+    raw_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    dispatch_prompt = prompt.replace(str(output_path), str(raw_path))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     log_dir = _image_log_dir(output_path)
@@ -177,11 +272,12 @@ def _run_codex_exec_image(
     jsonl_path = log_dir / f"{stem}.codex.jsonl"
     final_message_path = log_dir / f"{stem}.final.txt"
 
+    # Honor the user's codex config (auth, default model, image tool); running with
+    # --ignore-user-config made codex fall back to a model the account rejects.
     cmd = [
-        _codex_binary(),
+        runtime["path"],
         "exec",
         "--json",
-        "--ignore-user-config",
         "-C",
         str(_repo_root()),
         "-s",
@@ -196,31 +292,138 @@ def _run_codex_exec_image(
         cmd.extend(["-m", resolved_runner_model])
     cmd.append("-")
 
-    _log(f"Calling local Codex image generation for {output_path.name}")
-    with jsonl_path.open("w", encoding="utf-8") as stdout_handle:
-        proc = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            stdout=stdout_handle,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+    def dispatch() -> bytes:
+        raw_path.unlink(missing_ok=True)
+        with jsonl_path.open("w", encoding="utf-8") as stdout_handle:
+            proc = subprocess.run(cmd, input=dispatch_prompt, text=True,
+                                  stdout=stdout_handle, stderr=subprocess.STDOUT, check=False)
+        if not raw_path.is_file():
+            raise RuntimeError(f"Codex returned {proc.returncode} without exact new output; inspect {jsonl_path}")
+        return raw_path.read_bytes()
 
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"codex exec failed while generating {output_path.name}; inspect {jsonl_path}"
-        )
-    if not output_path.exists():
-        raise RuntimeError(
-            f"codex exec finished without writing {output_path}; inspect {jsonl_path} and {final_message_path}"
-        )
+    def recover() -> bytes | None:
+        if not raw_path.is_file():
+            return None
+        import io
+        from PIL import Image
+        raw = raw_path.read_bytes()
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                image.verify()
+        except Exception:
+            return None
+        return raw
+
+    raw = paid_bytes(identity, dispatch, output_path=output_path, provenance=runtime, recover=recover)
+    atomic_bytes(output_path, raw)
 
     _ensure_png(output_path)
-    _normalize_image_to_target(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
     return output_path
 
 
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _scene_target_dimensions(scene: dict[str, Any], kwargs: dict[str, Any]) -> tuple[int, int]:
+    width = _positive_int(kwargs.get("target_width") or scene.get("target_width") or scene.get("render_width"), TARGET_WIDTH)
+    height = _positive_int(kwargs.get("target_height") or scene.get("target_height") or scene.get("render_height"), TARGET_HEIGHT)
+    orientation = str(
+        kwargs.get("orientation")
+        or scene.get("orientation")
+        or scene.get("render_orientation")
+        or scene.get("aspect_ratio")
+        or scene.get("render_aspect_ratio")
+        or ""
+    ).strip().lower()
+    if (orientation in {"portrait", "vertical", "9:16"} or "9:16" in orientation) and height <= width:
+        return 1080, 1920
+    if (orientation in {"landscape", "horizontal", "16:9"} or "16:9" in orientation) and width <= height:
+        return TARGET_WIDTH, TARGET_HEIGHT
+    return width, height
+
+
+def _image_quality() -> str:
+    return (os.getenv("LOCAL_EXPLAINER_IMAGE_QUALITY") or "high").strip() or "high"
+
+
+def _generate_image_openai(
+    *,
+    prompt: str,
+    output_path: Path,
+    model: str,
+    target_width: int,
+    target_height: int,
+) -> Path:
+    """Generate one still via the OpenAI gpt-image API and write it to output_path.
+
+    This mirrors the deterministic, file-based approach used by the sibling cathode
+    pipeline (scripts/generate_openai_image.py): call the image API directly and write
+    the returned PNG to an exact path. It replaces the previous Codex native-image-tool
+    path, which returned images only as in-session artifacts with no filesystem handle
+    and so failed non-deterministically during headless renders.
+    """
+    import base64
+
+    import openai
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    portrait = int(target_height) > int(target_width)
+    orientation_hint = (
+        "Vertical 9:16 portrait composition; keep the subject and any text centered and within mobile safe zones.\n"
+        if portrait
+        else "Horizontal 16:9 landscape composition.\n"
+    )
+    full_prompt = f"{orientation_hint}{prompt.strip()}\n\n{TEXT_DISCIPLINE}"
+    # gpt-image only accepts a fixed set of sizes; pick by orientation, then normalize to
+    # the exact scene target. A non-standard size raises, so we fall back to "auto".
+    size = "1024x1536" if portrait else "1536x1024"
+    quality = _image_quality()
+    # The clinic routes text models through OpenRouter via OPENAI_BASE_URL, but OpenRouter
+    # does not serve the image endpoint — image generation must hit the real OpenAI API.
+    base_url = (os.getenv("OPENAI_IMAGE_BASE_URL") or "https://api.openai.com/v1").strip()
+    api_key = (os.getenv("OPENAI_IMAGE_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    resolved_model = (os.getenv("LOCAL_EXPLAINER_IMAGE_MODEL") or "gpt-image-1").strip() or "gpt-image-1"
+
+    client = openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0) if api_key else openai.OpenAI(base_url=base_url, max_retries=0)
+
+    def _call(size_value: str):
+        request = {"provider": "openai", "base_url": base_url, "model": resolved_model,
+                   "prompt": full_prompt, "size": size_value, "quality": quality,
+                   "output_format": "png", "width": target_width, "height": target_height}
+        def dispatch():
+            result = client.images.generate(model=resolved_model, prompt=full_prompt,
+                                            size=size_value, quality=quality, output_format="png")
+            payload = result.data[0].b64_json if getattr(result, "data", None) else None
+            if not payload:
+                raise RuntimeError(f"OpenAI returned no image payload for {output_path.name}")
+            # Save the acknowledged encoded response before decoding/conversion.
+            return payload.encode("ascii")
+        encoded = paid_bytes(request, dispatch, output_path=output_path,
+                             key="image-auto" if size_value == "auto" else "paid")
+        return base64.b64decode(encoded, validate=True)
+
+    try:
+        raw = _call(size)
+    except Exception as exc:
+        body = getattr(exc, "body", {})
+        error = body.get("error", body) if isinstance(body, dict) else {}
+        if status_code(exc) not in {400, 422} or error.get("param") != "size":
+            raise
+        raw = _call("auto")
+    atomic_bytes(output_path, raw)
+
+    _ensure_png(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
+    return output_path
+
+
+@image_generation_action
 def generate_image(
     prompt: str,
     output_path: str | Path,
@@ -228,25 +431,92 @@ def generate_image(
     *,
     title: str = "",
     runner_model: str | None = None,
+    target_width: int = TARGET_WIDTH,
+    target_height: int = TARGET_HEIGHT,
     **_: Any,
 ) -> Path:
-    """Generate a still image through local Codex native image generation."""
+    """Generate a still image, preferring the local Codex CLI (subscription-covered).
+
+    The Codex native image tool is the primary path; the metered OpenAI gpt-image
+    API is only a fallback when Codex is unavailable before dispatch. Set
+    LOCAL_EXPLAINER_IMAGE_PROVIDER=openai to force the API path explicitly.
+    """
     output_path = Path(output_path)
     prompt = str(prompt or "").strip()
     if not prompt:
         raise ValueError("Image generation requires a non-empty prompt")
 
-    codex_prompt = build_codex_image_prompt(
+    resolved_model = str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL
+    if resolved_model == "qwen/qwen-image-2512":
+        return _generate_image_qwen(prompt=prompt, output_path=output_path, model=resolved_model,
+                                    target_width=target_width, target_height=target_height)
+    provider = (os.getenv("LOCAL_EXPLAINER_IMAGE_PROVIDER") or "codex").strip().lower()
+    if provider != "openai" and _codex_cli_available():
+        codex_prompt = build_codex_image_prompt(
+            prompt=prompt,
+            output_path=output_path,
+            image_model=resolved_model,
+            title=title,
+            target_width=target_width,
+            target_height=target_height,
+        )
+        return _run_codex_exec_image(
+            prompt=codex_prompt,
+            output_path=output_path,
+            runner_model=runner_model,
+            target_width=target_width,
+            target_height=target_height,
+        )
+
+    return _generate_image_openai(
         prompt=prompt,
         output_path=output_path,
-        image_model=str(model or DEFAULT_IMAGE_GEN_MODEL).strip() or DEFAULT_IMAGE_GEN_MODEL,
-        title=title,
+        model=resolved_model,
+        target_width=target_width,
+        target_height=target_height,
     )
-    return _run_codex_exec_image(
-        prompt=codex_prompt,
-        output_path=output_path,
-        runner_model=runner_model,
-    )
+
+
+def _generate_image_qwen(*, prompt, output_path, model, target_width, target_height):
+    """The explicit Qwen action uses Replicate and retains its original response."""
+    import io
+    import json
+    import requests
+    from PIL import Image
+
+    inputs = {"prompt": prompt + "\n" + TEXT_DISCIPLINE,
+              "aspect_ratio": "1:1" if target_width == target_height else "9:16" if target_height > target_width else "16:9",
+              "output_format": "png", "go_fast": False}
+    request = {"provider": "replicate", "model": model, "input": inputs,
+               "target_width": target_width, "target_height": target_height}
+
+    def dispatch():
+        output = _get_replicate_client().run(model, input=inputs)
+        items = output if isinstance(output, list) else [output]
+        urls = [str(item.url if hasattr(item, "url") else item) for item in items]
+        if not urls or not urls[0].startswith("https://"):
+            raise RuntimeError("Qwen returned no image URL")
+        return json.dumps(urls).encode()
+
+    # Keep the paid acknowledgement before the separate, retryable output download.
+    response = paid_bytes(request, dispatch, output_path=output_path, key="qwen-provider",
+                          provenance={"provider": "replicate", "model": model})
+    url = json.loads(response)[0]
+    def download():
+        downloaded = requests.get(url, timeout=(5, 60))
+        downloaded.raise_for_status()
+        raw = downloaded.content
+        with Image.open(io.BytesIO(raw)) as image:
+            image.verify()
+        return raw
+
+    # Download recovery repeats only the original free read, never prediction creation.
+    raw = paid_bytes({"source_request": request_digest(request), "url": url}, download,
+                     output_path=output_path, key="qwen-image", recover=download)
+    atomic_bytes(output_path, raw)
+    _ensure_png(output_path)
+    _normalize_image_to_target(output_path, target_width, target_height)
+    return output_path
 
 
 def _get_replicate_client():
@@ -520,6 +790,7 @@ def generate_scene_image(
     output_path = images_dir / f"scene_{scene_id:03d}.png"
 
     visual_prompt = str(scene.get("visual_prompt") or "").strip()
+    target_width, target_height = _scene_target_dimensions(scene, kwargs)
     if visual_prompt:
         result = generate_image(
             visual_prompt,
@@ -527,6 +798,9 @@ def generate_scene_image(
             model=model or DEFAULT_IMAGE_GEN_MODEL,
             title=str(scene.get("title") or ""),
             runner_model=str(kwargs.get("runner_model") or "").strip() or None,
+            target_width=target_width,
+            target_height=target_height,
+            action_id=kwargs.get("action_id"),
         )
         scene["image_path"] = str(result)
         return result
@@ -545,5 +819,6 @@ def generate_scene_image(
         props=props,
         output_path=output_path,
     )
+    _normalize_image_to_target(result, target_width, target_height)
     scene["image_path"] = str(result)
     return result

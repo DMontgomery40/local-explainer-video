@@ -1,12 +1,14 @@
-"""Text-to-speech generation using Kokoro, ElevenLabs, Chatterbox, or OpenAI."""
+"""Text-to-speech generation using premium narration providers."""
 
+import base64
 import os
+import wave
 from pathlib import Path
 from typing import Literal
 
 import requests
-import soundfile as sf
 
+from core.generation_receipts import paid_bytes, atomic_bytes, image_generation_action
 from core.rate_limiter import elevenlabs_limiter, openai_limiter, image_limiter
 
 # ElevenLabs voices - curated selection for narration
@@ -22,10 +24,12 @@ ELEVENLABS_VOICES = {
     "Josh": ("TxGEqnHWrfWFTfGW9XjX", "Deep, authoritative male"),
     "Adam": ("pNInz6obpgDQGcFmaJgB", "Deep, warm male"),
     "Arnold": ("VR6AewLTigWG4xSOukaG", "Bold, energetic male"),
+    "George - Warm, Captivating Storyteller": ("JBFqnCBsd6RMkjVDRZzb", "British male storyteller"),
+    "Daniel - Steady Broadcaster": ("onwK4e9ZLuTAKqWW03F9", "British male broadcaster"),
 }
 
 DEFAULT_ELEVENLABS_VOICE = "Antoni"
-DEFAULT_ELEVENLABS_MODEL = "eleven_flash_v2_5"  # Fast + affordable; requires good number spelling in narration
+DEFAULT_ELEVENLABS_MODEL = "eleven_multilingual_v2"
 
 # Default ElevenLabs voice settings for warm, engaging narration
 DEFAULT_ELEVENLABS_STABILITY = 0.4
@@ -37,45 +41,22 @@ DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST = True
 ElevenLabsTextNormalization = Literal["auto", "on", "off"]
 DEFAULT_ELEVENLABS_TEXT_NORMALIZATION: ElevenLabsTextNormalization = "auto"
 
-# Available Kokoro voices
-# American English (lang_code='a'):
-#   Female: af_alloy, af_aoede, af_bella, af_heart, af_jessica, af_kore, af_nicole, af_nova, af_river, af_sarah, af_sky
-#   Male: am_adam, am_michael
-# British English (lang_code='b'):
-#   Female: bf_emma, bf_isabella
-#   Male: bm_george, bm_lewis
-
-KOKORO_VOICES = {
-    # American female - sorted by energy/upbeat quality
-    "af_bella": "Warm, friendly, upbeat female",
-    "af_sarah": "Clear, enthusiastic female",
-    "af_heart": "Gentle, reassuring female (default)",
-    "af_nicole": "Professional, confident female",
-    "af_jessica": "Bright, energetic female",
-    "af_nova": "Modern, dynamic female",
-    "af_sky": "Light, airy female",
-    "af_alloy": "Neutral, clear female",
-    "af_aoede": "Melodic, expressive female",
-    "af_kore": "Youthful, fresh female",
-    "af_river": "Smooth, flowing female",
-    # American male
-    "am_adam": "Warm, friendly male",
-    "am_michael": "Clear, professional male",
-    # British female
-    "bf_emma": "Warm British female",
-    "bf_isabella": "Elegant British female",
-    # British male
-    "bm_george": "Classic British male",
-    "bm_lewis": "Modern British male",
-}
-
-# Default settings for upbeat, engaging narration
-DEFAULT_VOICE = "af_bella"  # More upbeat than af_heart
-DEFAULT_SPEED = 1.1  # Slightly faster than normal
+# Default settings for premium clinic narration
+DEFAULT_VOICE = DEFAULT_ELEVENLABS_VOICE
+DEFAULT_SPEED = 1.0
 DEFAULT_EXAGGERATION = 0.6  # Slightly more expressive than neutral (0.5)
+DEFAULT_OPENAI_VOICE = "onyx"
+DEFAULT_OPENAI_MODEL = "tts-1-hd"
+DEFAULT_OPENROUTER_VOICE = "Charon"
+DEFAULT_OPENROUTER_MODEL = "google/gemini-3.1-flash-tts-preview"
+DEFAULT_OPENAI_INSTRUCTIONS = (
+    "Adult male voice. Natural American English. Warm, direct, confident, and conversational. "
+    "Read the narration with a premium documentary-clinic tone, natural pauses, grounded pacing, "
+    "and clear emphasis on the numbers."
+)
 
 # TTS Provider type
-TTSProvider = Literal["kokoro", "elevenlabs", "chatterbox", "openai"]
+TTSProvider = Literal["elevenlabs", "elevenlabs_replicate", "chatterbox", "openai", "openrouter"]
 
 
 def generate_audio(
@@ -83,7 +64,7 @@ def generate_audio(
     output_path: str | Path,
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
-    tts_provider: TTSProvider = "kokoro",
+    tts_provider: TTSProvider = "elevenlabs",
     exaggeration: float = DEFAULT_EXAGGERATION,
     # ElevenLabs settings (used when tts_provider=="elevenlabs")
     elevenlabs_model_id: str = DEFAULT_ELEVENLABS_MODEL,
@@ -92,6 +73,9 @@ def generate_audio(
     elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE,
     elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    openai_model: str = DEFAULT_OPENAI_MODEL,
+    openai_instructions: str = DEFAULT_OPENAI_INSTRUCTIONS,
+    openrouter_model: str = DEFAULT_OPENROUTER_MODEL,
 ) -> Path:
     """
     Generate speech audio from text.
@@ -99,9 +83,9 @@ def generate_audio(
     Args:
         text: The text to convert to speech
         output_path: Where to save the audio file
-        voice: Voice identifier (provider-dependent: Kokoro voice id like "af_bella", or ElevenLabs voice name like "Rachel")
-        speed: Speech speed multiplier (provider-dependent: Kokoro pipeline speed, or ElevenLabs voice_settings.speed)
-        tts_provider: TTS provider ("kokoro", "elevenlabs", "chatterbox", or "openai")
+        voice: Voice identifier (provider-dependent: ElevenLabs voice name like "Antoni", or provider-specific id)
+        speed: Speech speed multiplier (provider-dependent)
+        tts_provider: TTS provider ("elevenlabs", "chatterbox", or "openai")
         exaggeration: Emotion intensity 0.25-2.0 (0.5=neutral, higher=more expressive) - Chatterbox only
         elevenlabs_model_id: ElevenLabs model id (e.g., "eleven_flash_v2_5")
         elevenlabs_apply_text_normalization: ElevenLabs text normalization mode ("auto"|"on"|"off")
@@ -117,12 +101,7 @@ def generate_audio(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if tts_provider == "kokoro":
-        try:
-            return _generate_with_kokoro(text, output_path, voice, speed)
-        except Exception as e:
-            # Fallback to OpenAI if Kokoro fails
-            print(f"Kokoro TTS failed ({e}), falling back to OpenAI...")
-            return _generate_with_openai(text, output_path)
+        raise ValueError("Kokoro narration is disabled for clinic renders; use ElevenLabs or OpenAI tts-1-hd.")
     elif tts_provider == "elevenlabs":
         return _generate_with_elevenlabs(
             text=text,
@@ -136,45 +115,55 @@ def generate_audio(
             use_speaker_boost=elevenlabs_use_speaker_boost,
             apply_text_normalization=elevenlabs_apply_text_normalization,
         )
+    elif tts_provider == "elevenlabs_replicate":
+        return _generate_with_elevenlabs_replicate(
+            text=text,
+            output_path=output_path,
+            voice=voice,
+            speed=speed,
+            stability=elevenlabs_stability,
+            similarity_boost=elevenlabs_similarity_boost,
+            style=elevenlabs_style,
+        )
     elif tts_provider == "chatterbox":
         return _generate_with_chatterbox(text, output_path, exaggeration)
     elif tts_provider == "openai":
-        return _generate_with_openai(text, output_path)
+        if openai_model.startswith("gpt-realtime") or openai_model.startswith("gpt-4o"):
+            raise ValueError("OpenAI realtime and 4o-based audio models are disabled for clinic narration.")
+        return _generate_with_openai(
+            text,
+            output_path,
+            voice=voice or DEFAULT_OPENAI_VOICE,
+            model=openai_model,
+            instructions=openai_instructions,
+        )
+    elif tts_provider == "openrouter":
+        return _generate_with_openrouter(
+            text,
+            output_path,
+            voice=voice or DEFAULT_OPENROUTER_VOICE,
+            model=openrouter_model,
+            speed=speed,
+        )
     else:
         raise ValueError(f"Unknown TTS provider: {tts_provider}")
 
 
-def _generate_with_kokoro(text: str, output_path: Path, voice: str, speed: float = 1.0) -> Path:
-    """Generate audio using Kokoro local TTS."""
-    import numpy as np
-    from kokoro import KPipeline
-
-    # Determine language code from voice prefix
-    # 'a' = American English, 'b' = British English
-    lang_code = "b" if voice.startswith("b") else "a"
-
-    # Initialize pipeline
-    pipeline = KPipeline(lang_code=lang_code)
-
-    # Generate audio - new API returns (graphemes, phonemes, audio) tuples
-    # speed parameter controls speech rate (1.0 = normal, 1.2 = 20% faster)
-    generator = pipeline(text, voice=voice, speed=speed)
-
-    # Collect all audio chunks
-    all_audio = []
-    sample_rate = 24000  # Kokoro default
-
-    for graphemes, phonemes, audio in generator:
-        all_audio.append(audio)
-
-    # Concatenate all chunks and save
-    if all_audio:
-        audio_data = np.concatenate(all_audio) if len(all_audio) > 1 else all_audio[0]
-        sf.write(str(output_path), audio_data, sample_rate)
-    else:
-        raise ValueError("No audio generated")
-
-    return output_path
+def _replicate_audio_output(model: str, inputs: dict, output_path: Path):
+    """Save the creation acknowledgement before polling or downloading."""
+    import replicate
+    client = replicate.Client()
+    prediction_id = image_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "replicate", "base_url": os.getenv("REPLICATE_BASE_URL") or "https://api.replicate.com",
+         "model": model, "input": inputs},
+        lambda: client.models.predictions.create(model=model, input=inputs, wait=False).id.encode(),
+        output_path=output_path))
+    prediction = client.predictions.get(prediction_id.decode())
+    if prediction.status not in {"succeeded", "failed", "canceled"}:
+        prediction.wait()
+    if prediction.status != "succeeded":
+        raise RuntimeError(f"Acknowledged Replicate prediction {prediction_id.decode()} is {prediction.status}")
+    return prediction.output
 
 
 def _generate_with_chatterbox(
@@ -199,25 +188,12 @@ def _generate_with_chatterbox(
     Returns:
         Path to the saved audio file
     """
-    import replicate
-
-    def _call_chatterbox():
-        return replicate.run(
-            "resemble-ai/chatterbox",
-            input={
-                "prompt": text,
-                "exaggeration": exaggeration,
-                "cfg_weight": cfg_weight,
-                "temperature": temperature,
-                "seed": 0,  # Random seed for variety
-            }
-        )
-
-    # Use image_limiter since it's also Replicate
-    output_url = image_limiter.call_with_retry(_call_chatterbox)
+    output_url = _replicate_audio_output("resemble-ai/chatterbox", {
+        "prompt": text, "exaggeration": exaggeration, "cfg_weight": cfg_weight,
+        "temperature": temperature, "seed": 0}, output_path)
 
     # Download the audio file
-    response = requests.get(output_url)
+    response = requests.get(output_url, timeout=(10, 180))
     response.raise_for_status()
 
     # Chatterbox returns WAV, save directly
@@ -233,6 +209,88 @@ def _generate_with_chatterbox(
 
     # Otherwise convert (though WAV is preferred)
     return temp_path
+
+
+def _generate_with_elevenlabs_replicate(
+    *,
+    text: str,
+    output_path: Path,
+    voice: str = DEFAULT_ELEVENLABS_VOICE,
+    model_slug: str = "elevenlabs/flash-v2.5",
+    speed: float = 1.15,
+    stability: float = DEFAULT_ELEVENLABS_STABILITY,
+    similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
+    style: float = DEFAULT_ELEVENLABS_STYLE,
+) -> Path:
+    """Generate audio using ElevenLabs on Replicate.
+
+    Avoids direct ElevenLabs API quota issues; billing goes through Replicate.
+    Follows the same pattern as _generate_with_chatterbox().
+    """
+    import replicate
+
+    # Replicate ElevenLabs has its own voice set (different from direct API)
+    REPLICATE_ELEVENLABS_VOICES = {
+        "Rachel", "Drew", "Clyde", "Paul", "Aria", "Domi", "Dave", "Roger",
+        "Fin", "Sarah", "James", "Jane", "Juniper", "Arabella", "Hope",
+        "Bradford", "Reginald", "Gaming", "Austin", "Kuon", "Blondie",
+        "Priyanka", "Alexandra", "Monika", "Mark", "Grimblewood",
+    }
+    # Map direct-API voice names to closest Replicate equivalents
+    VOICE_MAP = {
+        "Antoni": "Drew",     # Calm professional male
+        "Josh": "Dave",       # Deep authoritative male
+        "Adam": "Mark",       # Deep warm male
+        "Arnold": "Austin",   # Bold energetic male
+        "Rachel": "Rachel",   # Warm calm female
+        "Bella": "Aria",      # Friendly conversational female
+        "Elli": "Jane",       # Young energetic female
+    }
+    replicate_voice = VOICE_MAP.get(voice, voice)
+    if replicate_voice not in REPLICATE_ELEVENLABS_VOICES:
+        replicate_voice = "Drew"  # safe fallback
+
+    output_url = _replicate_audio_output(model_slug, {
+        "prompt": text, "voice": replicate_voice, "speed": speed, "stability": stability,
+        "similarity_boost": similarity_boost, "style": style}, output_path)
+
+    # Download the audio file (Replicate returns a URL)
+    if hasattr(output_url, "url"):
+        url = output_url.url
+    elif isinstance(output_url, str):
+        url = output_url
+    else:
+        url = str(output_url)
+
+    response = requests.get(url, timeout=(10, 180))
+    response.raise_for_status()
+
+    # Save as the output format (likely mp3 from ElevenLabs)
+    temp_path = output_path.with_suffix(".mp3")
+    temp_path.write_bytes(response.content)
+
+    # Convert to WAV if needed
+    if output_path.suffix == ".wav":
+        wav_path = output_path
+        _convert_mp3_to_wav(temp_path, wav_path)
+        temp_path.unlink(missing_ok=True)
+        return wav_path
+
+    if temp_path != output_path:
+        temp_path.rename(output_path)
+    return output_path
+
+
+def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
+    """Convert MP3 to WAV using soundfile or ffmpeg fallback."""
+    import subprocess
+    import shutil
+
+    ffmpeg = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    subprocess.run(
+        [ffmpeg, "-y", "-i", str(mp3_path), "-ar", "24000", "-ac", "1", str(wav_path)],
+        capture_output=True, timeout=30, check=True,
+    )
 
 
 def _generate_with_elevenlabs(
@@ -295,10 +353,12 @@ def _generate_with_elevenlabs(
         return resp
 
     # Use dedicated ElevenLabs limiter (configurable via ELEVENLABS_MIN_DELAY_S / ELEVENLABS_MAX_RETRIES)
-    response = elevenlabs_limiter.call_with_retry(_call_elevenlabs)
+    raw = elevenlabs_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "elevenlabs", "url": url, "output_format": "mp3_44100_128", **payload},
+        lambda: _call_elevenlabs().content, output_path=output_path))
 
     mp3_path = output_path.with_suffix(".mp3")
-    mp3_path.write_bytes(response.content)
+    atomic_bytes(mp3_path, raw)
 
     if output_path.suffix == ".wav":
         _convert_mp3_to_wav(mp3_path, output_path)
@@ -308,25 +368,76 @@ def _generate_with_elevenlabs(
     return mp3_path
 
 
-def _generate_with_openai(text: str, output_path: Path, voice: str = "nova") -> Path:
+def _generate_with_openai(
+    text: str,
+    output_path: Path,
+    voice: str = DEFAULT_OPENAI_VOICE,
+    model: str = DEFAULT_OPENAI_MODEL,
+    instructions: str = DEFAULT_OPENAI_INSTRUCTIONS,
+) -> Path:
     """Generate audio using OpenAI TTS with rate limiting."""
     import openai
 
-    client = openai.OpenAI()
+    if model.startswith("gpt-realtime") or model.startswith("gpt-4o"):
+        raise ValueError("OpenAI realtime and 4o-based audio models are disabled for clinic narration.")
+
+    client = openai.OpenAI(max_retries=0)
+
+    # The general audio model family works through chat-completions audio output.
+    if model.startswith("gpt-audio") or "audio-preview" in model:
+        def _call_openai_chat_audio():
+            return client.chat.completions.create(
+                model=model,
+                modalities=["audio"],
+                audio={
+                    "voice": voice,
+                    "format": "wav",
+                },
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{instructions}\n\n"
+                            "Read the user's script exactly as written. "
+                            "Do not add a preamble, conclusion, or extra commentary. "
+                            "Do not summarize. Do not rewrite. Speak the script verbatim."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": text,
+                    },
+                ],
+                temperature=0.2,
+            )
+
+        audio_b64 = openai_limiter.call_with_retry(lambda: paid_bytes(
+            {"provider": "openai-chat-audio", "base_url": str(client.base_url), "model": model,
+             "voice": voice, "instructions": instructions, "text": text, "format": "wav", "temperature": 0.2},
+            lambda: _call_openai_chat_audio().choices[0].message.audio.data.encode("ascii"), output_path=output_path))
+        audio_bytes = base64.b64decode(audio_b64)
+
+        wav_path = output_path if output_path.suffix == ".wav" else output_path.with_suffix(".wav")
+        wav_path.write_bytes(audio_bytes)
+        if output_path.suffix == ".wav":
+            return wav_path
+        return wav_path
 
     def _call_openai():
         return client.audio.speech.create(
-            model="tts-1",
+            model=model,
             voice=voice,
             input=text,
             response_format="mp3",
+            instructions=instructions,
         )
 
-    response = openai_limiter.call_with_retry(_call_openai)
-
-    # Save the audio
+    raw = openai_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "openai-tts", "base_url": str(client.base_url), "model": model, "voice": voice,
+         "input": text, "response_format": "mp3", "instructions": instructions},
+        lambda: _call_openai().content, output_path=output_path))
     mp3_path = output_path.with_suffix(".mp3")
-    response.stream_to_file(str(mp3_path))
+    atomic_bytes(mp3_path, raw)
 
     # Convert to WAV for consistency (MoviePy works better with WAV)
     if output_path.suffix == ".wav":
@@ -334,6 +445,75 @@ def _generate_with_openai(text: str, output_path: Path, voice: str = "nova") -> 
         mp3_path.unlink()  # Remove temporary MP3
         return output_path
 
+    return mp3_path
+
+
+def _generate_with_openrouter(
+    text: str,
+    output_path: Path,
+    *,
+    voice: str = DEFAULT_OPENROUTER_VOICE,
+    model: str = DEFAULT_OPENROUTER_MODEL,
+    speed: float = 1.0,
+) -> Path:
+    """Generate Gemini narration through OpenRouter's TTS endpoint."""
+    api_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not set.")
+
+    resolved_model = str(model or DEFAULT_OPENROUTER_MODEL).strip()
+    resolved_voice = str(voice or DEFAULT_OPENROUTER_VOICE).strip()
+    response_format = (
+        "pcm"
+        if resolved_model.startswith("google/gemini-") and "tts" in resolved_model
+        else "mp3"
+    )
+    payload = {
+        "model": resolved_model,
+        "input": (
+            "Read the following text exactly as a natural, measured, conversational documentary narrator. "
+            "Use a normal speaking pace. Do not add, omit, summarize, or comment on any words.\n\n"
+            f"{text}"
+        ),
+        "voice": resolved_voice,
+        "response_format": response_format,
+        "speed": float(speed or 1.0),
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost/qeeg-clinic-workbench",
+        "X-Title": "qEEG Clinic Workbench",
+    }
+
+    def _call_openrouter() -> requests.Response:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/audio/speech",
+            headers=headers,
+            json=payload,
+            timeout=(10, 300),
+        )
+        response.raise_for_status()
+        return response
+
+    raw = openai_limiter.call_with_retry(lambda: paid_bytes(
+        {"provider": "openrouter", "url": "https://openrouter.ai/api/v1/audio/speech", **payload},
+        lambda: _call_openrouter().content, output_path=output_path))
+    if response_format == "pcm":
+        wav_path = output_path if output_path.suffix == ".wav" else output_path.with_suffix(".wav")
+        with wave.open(str(wav_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(24000)
+            wav_file.writeframes(raw)
+        return wav_path
+
+    mp3_path = output_path.with_suffix(".mp3")
+    mp3_path.write_bytes(raw)
+    if output_path.suffix == ".wav":
+        _convert_mp3_to_wav(mp3_path, output_path)
+        mp3_path.unlink(missing_ok=True)
+        return output_path
     return mp3_path
 
 
@@ -356,7 +536,7 @@ def _convert_mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
 def generate_scene_audio(
     scene: dict,
     project_dir: Path,
-    tts_provider: TTSProvider = "kokoro",
+    tts_provider: TTSProvider = "elevenlabs",
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
     exaggeration: float = DEFAULT_EXAGGERATION,
@@ -367,6 +547,10 @@ def generate_scene_audio(
     elevenlabs_similarity_boost: float = DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
     elevenlabs_style: float = DEFAULT_ELEVENLABS_STYLE,
     elevenlabs_use_speaker_boost: bool = DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
+    openai_model: str = DEFAULT_OPENAI_MODEL,
+    openai_instructions: str = DEFAULT_OPENAI_INSTRUCTIONS,
+    openrouter_model: str = DEFAULT_OPENROUTER_MODEL,
+    action_id: str | None = None,
 ) -> Path:
     """
     Generate audio for a specific scene.
@@ -374,11 +558,12 @@ def generate_scene_audio(
     Args:
         scene: Scene dictionary with 'id' and 'narration'
         project_dir: Project directory for saving assets
-        tts_provider: TTS provider ("kokoro", "elevenlabs", "chatterbox", or "openai")
+        tts_provider: TTS provider ("elevenlabs", "openai", or an explicitly requested fallback)
         voice: Voice identifier (provider-dependent)
         speed: Speed multiplier (provider-dependent)
         exaggeration: Emotion intensity 0.25-2.0 (Chatterbox only)
         elevenlabs_*: ElevenLabs settings (used when tts_provider=="elevenlabs")
+        action_id: Retain for retries of one scene action; omit for a new generation.
 
     Returns:
         Path to the generated audio
@@ -388,7 +573,9 @@ def generate_scene_audio(
 
     output_path = project_dir / "audio" / f"scene_{scene_id:03d}.wav"
 
-    return generate_audio(
+    # The same receipt scope serves image and audio actions and preserves an
+    # enclosing render attempt. Low-level pipeline calls retain request receipts.
+    return image_generation_action(generate_audio)(
         narration,
         output_path,
         voice=voice,
@@ -401,4 +588,8 @@ def generate_scene_audio(
         elevenlabs_similarity_boost=elevenlabs_similarity_boost,
         elevenlabs_style=elevenlabs_style,
         elevenlabs_use_speaker_boost=elevenlabs_use_speaker_boost,
+        openai_model=openai_model,
+        openai_instructions=openai_instructions,
+        openrouter_model=openrouter_model,
+        action_id=action_id,
     )

@@ -6,6 +6,7 @@ import random
 import sys
 import traceback
 from typing import Callable, TypeVar, Any
+from core.generation_receipts import status_code
 
 T = TypeVar("T")
 
@@ -68,7 +69,7 @@ class RateLimiter:
                 _log(f"  Attempt {attempt + 1}/{self.max_retries}: FAILED - {type(e).__name__}: {e}")
                 _log(f"  Full traceback:\n{traceback.format_exc()}")
 
-                if attempt == self.max_retries - 1:
+                if status_code(e) != 429 or attempt == self.max_retries - 1:
                     # Last attempt, re-raise
                     _log(f"  All {self.max_retries} attempts exhausted, re-raising exception")
                     raise

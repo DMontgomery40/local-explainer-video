@@ -3,10 +3,9 @@
 Batch regenerate videos for all valid patient ID projects.
 
 Usage:
-    python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...] [--image-model MODEL]
-                                 [--use-eeg-10-20-guide | --no-eeg-10-20-guide]
+    python3.10 batch_regenerate.py [--dry-run] [--projects PROJECT1,PROJECT2,...]
 
-Valid patient ID format: MM-DD-YYYY-N (e.g., 01-01-1991-0)
+Valid patient ID format: XX_MM-DD-YYYY[_N] (e.g., ZZ_01-01-1900)
 """
 
 import argparse
@@ -22,7 +21,9 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from core.director import generate_storyboard
-from core.image_gen import DEFAULT_IMAGE_GEN_MODEL, IMAGEN_4_MODEL, generate_scene_image
+from core.patient_id import infer_patient_id
+from core.local_planner import normalize_storyboard_runner
+from core.image_gen import generate_scene_image
 from core.voice_gen import (
     DEFAULT_ELEVENLABS_MODEL,
     DEFAULT_ELEVENLABS_SIMILARITY_BOOST,
@@ -32,8 +33,9 @@ from core.voice_gen import (
     DEFAULT_ELEVENLABS_TEXT_NORMALIZATION,
     DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST,
     DEFAULT_ELEVENLABS_VOICE,
+    DEFAULT_OPENROUTER_VOICE,
+    DEFAULT_OPENAI_VOICE,
     DEFAULT_SPEED,
-    DEFAULT_VOICE,
     ElevenLabsTextNormalization,
     generate_scene_audio,
 )
@@ -42,17 +44,23 @@ from core.video_assembly import assemble_video
 PROJECTS_DIR = Path(__file__).parent / "projects"
 ARGS: dict = {}
 
-# Pattern for valid patient IDs: MM-DD-YYYY-N
-PATIENT_ID_PATTERN = re.compile(r"^\d{2}-\d{2}-\d{4}-\d+$")
-
-
 def get_valid_patient_projects() -> list[Path]:
-    """Find all projects with valid patient ID names that have plan.json."""
+    """Find all projects named for a patient that have plan.json.
+
+    A directory this cannot read a patient ID from is named and skipped rather
+    than dropped silently — legacy-named projects will sit here until the
+    clinic's cutover renames them, and a batch that quietly renders nothing is
+    the failure that hides them.
+    """
     projects = []
-    for p in PROJECTS_DIR.iterdir():
-        if p.is_dir() and PATIENT_ID_PATTERN.match(p.name):
-            if (p / "plan.json").exists():
-                projects.append(p)
+    for p in sorted(PROJECTS_DIR.iterdir()):
+        if not p.is_dir():
+            continue
+        if infer_patient_id(p.name) is None:
+            print(f"  skipping {p.name}: not a clinic patient ID")
+            continue
+        if (p / "plan.json").exists():
+            projects.append(p)
     return sorted(projects)
 
 
@@ -105,19 +113,16 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
         print(f"ERROR: No input_text found in {project_name}/plan.json")
         return False
 
-    provider = old_plan.get("meta", {}).get("llm_provider", "anthropic")
+    provider = normalize_storyboard_runner(old_plan.get("meta", {}).get("llm_provider", "claude"))
     meta = old_plan.get("meta", {}) if isinstance(old_plan.get("meta"), dict) else {}
-    image_model = str(ARGS.get("image_model") or meta.get("image_model") or DEFAULT_IMAGE_GEN_MODEL).strip()
-    if ARGS.get("use_eeg_10_20_guide") is None:
-        use_eeg_10_20_guide = bool(meta.get("use_eeg_10_20_guide", False))
-    else:
-        use_eeg_10_20_guide = bool(ARGS.get("use_eeg_10_20_guide"))
 
     # TTS settings: prefer CLI args (if provided), else prefer plan meta, else defaults.
-    tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "kokoro").strip()
-    if tts_provider not in {"kokoro", "elevenlabs", "openai"}:
-        print(f"  WARNING: Unknown tts_provider={tts_provider!r}; falling back to 'kokoro'")
-        tts_provider = "kokoro"
+    tts_provider = (ARGS.get("tts_provider") or meta.get("tts_provider") or "openrouter").strip()
+    if tts_provider == "kokoro" and not ARGS.get("tts_provider"):
+        tts_provider = "openrouter"
+    if tts_provider not in {"openrouter", "elevenlabs", "openai"}:
+        print(f"ERROR: Unsupported tts_provider={tts_provider!r}")
+        return False
 
     if tts_provider == "elevenlabs":
         tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_ELEVENLABS_VOICE).strip()
@@ -143,9 +148,10 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             else meta.get("elevenlabs_use_speaker_boost", DEFAULT_ELEVENLABS_USE_SPEAKER_BOOST)
         )
     else:
-        # Kokoro/OpenAI defaults (voice/speed are only meaningful for Kokoro here)
-        tts_voice = (ARGS.get("tts_voice") or meta.get("tts_voice") or DEFAULT_VOICE).strip()
-        tts_speed = float(ARGS.get("tts_speed") or meta.get("tts_speed") or DEFAULT_SPEED)
+        matching_meta = meta if meta.get("tts_provider") == tts_provider else {}
+        default_voice = DEFAULT_OPENROUTER_VOICE if tts_provider == "openrouter" else DEFAULT_OPENAI_VOICE
+        tts_voice = (ARGS.get("tts_voice") or matching_meta.get("tts_voice") or default_voice).strip()
+        tts_speed = float(ARGS.get("tts_speed") or matching_meta.get("tts_speed") or DEFAULT_SPEED)
         elevenlabs_model_id = DEFAULT_ELEVENLABS_MODEL
         elevenlabs_text_norm = DEFAULT_ELEVENLABS_TEXT_NORMALIZATION
         elevenlabs_stability = DEFAULT_ELEVENLABS_STABILITY
@@ -155,8 +161,6 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
 
     if dry_run:
         print(f"  [DRY RUN] Would regenerate with provider: {provider}")
-        print(f"  [DRY RUN] Image model: {image_model}")
-        print(f"  [DRY RUN] EEG 10-20 guide: {use_eeg_10_20_guide}")
         print(f"  [DRY RUN] Input text length: {len(input_text)} chars")
         print(f"  [DRY RUN] TTS: provider={tts_provider} voice={tts_voice} speed={tts_speed}")
         return True
@@ -164,7 +168,7 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     # Step 1: Generate new storyboard
     print(f"\n[1/4] Generating storyboard...")
     try:
-        scenes = generate_storyboard(input_text, provider=provider)
+        scenes = generate_storyboard(input_text, provider=provider, project_dir=project_dir)
         print(f"  Generated {len(scenes)} scenes")
     except Exception as e:
         print(f"ERROR: Storyboard generation failed: {e}")
@@ -181,8 +185,9 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             "created_utc": datetime.utcnow().isoformat(),
             "regenerated_utc": datetime.utcnow().isoformat(),
             "llm_provider": provider,
-            "image_model": image_model,
-            "use_eeg_10_20_guide": use_eeg_10_20_guide,
+            "planner_mode": "agentic_local_qeeg",
+            "local_planner_runner": provider,
+            "image_model": "qwen/qwen-image-2512",
             "input_text": input_text,
             "tts_provider": tts_provider,
             "tts_voice": tts_voice,
@@ -201,22 +206,26 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     save_plan(project_dir, new_plan)
     print(f"  Saved new plan.json")
 
+    if any(str(scene.get("scene_type") or "").strip().lower() == "motion" for scene in scenes):
+        print("  Plan contains Cathode native motion scenes; stopping after storyboard save.")
+        print("  Use Cathode for downstream Remotion execution of this spike output.")
+        return True
+
+    failures = []
+
     # Step 2: Generate images
     print(f"\n[2/4] Generating images...")
     for i, scene in enumerate(scenes):
         print(f"  Scene {i+1}/{len(scenes)}: {scene.get('title', 'Untitled')[:40]}...")
         try:
-            path = generate_scene_image(
-                scene,
-                project_dir,
-                model=image_model,
-                use_eeg_10_20_guide=use_eeg_10_20_guide,
-            )
+            path = generate_scene_image(scene, project_dir, model=new_plan["meta"]["image_model"])
             scene["image_path"] = str(path)
             save_plan(project_dir, new_plan)
         except Exception as e:
             print(f"  ERROR generating image for scene {i}: {e}")
-            # Continue with other scenes
+            failures.append(("image", i, str(e)))
+            scene.pop("image_path", None)
+            save_plan(project_dir, new_plan)
 
     # Step 3: Generate audio
     print(f"\n[3/4] Generating audio...")
@@ -239,7 +248,13 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
             save_plan(project_dir, new_plan)
         except Exception as e:
             print(f"  ERROR generating audio for scene {i}: {e}")
-            # Continue with other scenes
+            failures.append(("audio", i, str(e)))
+            scene.pop("audio_path", None)
+            save_plan(project_dir, new_plan)
+
+    if failures:
+        print(f"ERROR: {len(failures)} required assets failed; video assembly stopped")
+        return False
 
     # Step 4: Assemble video
     print(f"\n[4/4] Assembling video...")
@@ -261,25 +276,7 @@ def main():
     parser = argparse.ArgumentParser(description="Batch regenerate patient videos")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without doing it")
     parser.add_argument("--projects", type=str, help="Comma-separated list of specific projects to process")
-    parser.add_argument(
-        "--image-model",
-        type=str,
-        default="",
-        help=f"Replicate image model (e.g., {DEFAULT_IMAGE_GEN_MODEL} or {IMAGEN_4_MODEL}).",
-    )
-    parser.add_argument(
-        "--use-eeg-10-20-guide",
-        action="store_true",
-        default=None,
-        help="Append a 10-20 electrode-placement reminder to image prompts.",
-    )
-    parser.add_argument(
-        "--no-eeg-10-20-guide",
-        action="store_false",
-        dest="use_eeg_10_20_guide",
-        help="Disable the 10-20 electrode-placement reminder.",
-    )
-    parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: kokoro, elevenlabs, openai (default: from plan meta or kokoro)")
+    parser.add_argument("--tts-provider", type=str, default="", help="TTS provider: openrouter, elevenlabs, openai (default: supported plan setting or OpenRouter Charon)")
     parser.add_argument("--tts-voice", type=str, default="", help="TTS voice (Kokoro voice id or ElevenLabs voice name)")
     parser.add_argument("--tts-speed", type=float, default=0.0, help="TTS speed (Kokoro or ElevenLabs). 0 means default/from meta.")
     parser.add_argument("--elevenlabs-model-id", type=str, default="", help="ElevenLabs model_id (default eleven_flash_v2_5)")
@@ -302,8 +299,6 @@ def main():
     # Normalize CLI args into a simple dict for use inside regenerate_project()
     global ARGS
     ARGS = {
-        "image_model": (args.image_model or "").strip(),
-        "use_eeg_10_20_guide": args.use_eeg_10_20_guide,
         "tts_provider": (args.tts_provider or "").strip(),
         "tts_voice": (args.tts_voice or "").strip(),
         "tts_speed": float(args.tts_speed) if args.tts_speed else 0.0,
@@ -327,7 +322,7 @@ def main():
     if not projects:
         print("No valid patient ID projects found.")
         print(f"Looking in: {PROJECTS_DIR}")
-        print("Valid format: MM-DD-YYYY-N (e.g., 01-01-1991-0)")
+        print("Valid format: XX_MM-DD-YYYY[_N] (e.g., ZZ_01-01-1900)")
         sys.exit(1)
 
     print(f"Found {len(projects)} project(s) to process:")

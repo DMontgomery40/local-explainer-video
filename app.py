@@ -40,7 +40,10 @@ from core.voice_gen import (
     DEFAULT_SPEED,
     DEFAULT_VOICE,
     ELEVENLABS_VOICES,
-    KOKORO_VOICES,
+    DEFAULT_OPENROUTER_VOICE,
+    DEFAULT_OPENROUTER_MODEL,
+    DEFAULT_OPENAI_VOICE,
+    DEFAULT_OPENAI_MODEL,
     generate_scene_audio,
 )
 from core.video_assembly import assemble_video, get_video_duration, preview_scene
@@ -71,6 +74,7 @@ PROJECTS_DIR.mkdir(exist_ok=True)
 def check_api_keys() -> dict[str, bool]:
     """Check which API keys are configured."""
     return {
+        "openrouter": bool((os.getenv("OPENROUTER_API_KEY") or "").strip()),
         "openai": bool(os.getenv("OPENAI_API_KEY")),
         "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
         "replicate": bool(os.getenv("REPLICATE_API_TOKEN")),
@@ -217,15 +221,19 @@ def init_session_state():
     if "plan" not in st.session_state:
         st.session_state.plan = None
     if "tts_voice" not in st.session_state:
-        st.session_state.tts_voice = DEFAULT_VOICE
+        st.session_state.tts_voice = DEFAULT_OPENROUTER_VOICE
     if "tts_speed" not in st.session_state:
         st.session_state.tts_speed = DEFAULT_SPEED
-    if "tts_provider" not in st.session_state:
-        st.session_state.tts_provider = "kokoro"  # Default to free local TTS
+    if st.session_state.get("tts_provider") not in {"openrouter", "elevenlabs", "openai"}:
+        st.session_state.tts_provider = "openrouter"
+        st.session_state.tts_voice = DEFAULT_OPENROUTER_VOICE
+        st.session_state.tts_speed = DEFAULT_SPEED
+    if st.session_state.get("tts_provider_selector") not in {"openrouter", "elevenlabs", "openai"}:
+        st.session_state.tts_provider_selector = st.session_state.tts_provider
     if "tts_exaggeration" not in st.session_state:
         st.session_state.tts_exaggeration = DEFAULT_EXAGGERATION
 
-    # ElevenLabs-specific settings (kept separate from Kokoro voice/speed)
+    # ElevenLabs-specific settings (kept separate from OpenRouter voice/speed)
     if "tts_elevenlabs_voice" not in st.session_state:
         st.session_state.tts_elevenlabs_voice = DEFAULT_ELEVENLABS_VOICE
     if "tts_elevenlabs_speed" not in st.session_state:
@@ -267,13 +275,15 @@ def _tts_kwargs_from_state() -> dict:
     provider = st.session_state.tts_provider
     kwargs: dict = {"tts_provider": provider}
 
-    if provider == "kokoro":
-        kwargs.update(
-            {
-                "voice": st.session_state.tts_voice,
-                "speed": float(st.session_state.tts_speed),
-            }
-        )
+    if provider == "openrouter":
+        if not check_api_keys()["openrouter"]:
+            raise ValueError("Set OPENROUTER_API_KEY in .env to generate Gemini Charon audio.")
+        kwargs.update(voice=DEFAULT_OPENROUTER_VOICE, speed=DEFAULT_SPEED,
+                      openrouter_model=DEFAULT_OPENROUTER_MODEL)
+        return kwargs
+    if provider == "openai":
+        kwargs.update(voice=DEFAULT_OPENAI_VOICE, speed=DEFAULT_SPEED,
+                      openai_model=DEFAULT_OPENAI_MODEL)
         return kwargs
 
     if provider == "elevenlabs":
@@ -429,7 +439,7 @@ def render_sidebar():
 
         # TTS Provider selector
         tts_providers = {
-            "kokoro": "Kokoro (Free, Local)",
+            "openrouter": "Gemini TTS (OpenRouter)",
             "elevenlabs": "ElevenLabs (Flash v2.5, Premium)",
             "openai": "OpenAI TTS",
         }
@@ -446,32 +456,10 @@ def render_sidebar():
         st.session_state.tts_provider = selected_provider
 
         # Provider-specific settings
-        if selected_provider == "kokoro":
-            # Voice selector (Kokoro only)
-            voice_options = list(KOKORO_VOICES.keys())
-            current_voice_idx = voice_options.index(st.session_state.tts_voice) if st.session_state.tts_voice in voice_options else 0
-
-            selected_voice = st.selectbox(
-                "Voice",
-                options=voice_options,
-                format_func=lambda v: f"{v} - {KOKORO_VOICES[v]}",
-                index=current_voice_idx,
-                key="kokoro_voice_selector",
-                help="Choose the narrator voice",
-            )
-            st.session_state.tts_voice = selected_voice
-
-            # Speed slider (Kokoro only)
-            speed = st.slider(
-                "Speed",
-                min_value=0.8,
-                max_value=1.5,
-                value=st.session_state.tts_speed,
-                step=0.1,
-                key="kokoro_speed_slider",
-                help="1.0 = normal, 1.2 = 20% faster",
-            )
-            st.session_state.tts_speed = speed
+        if selected_provider == "openrouter":
+            if not keys["openrouter"]:
+                st.error("Set OPENROUTER_API_KEY in .env to generate Gemini Charon audio.")
+            st.caption(f"{DEFAULT_OPENROUTER_VOICE} voice, normal speed")
 
         elif selected_provider == "elevenlabs":
             if not keys.get("elevenlabs"):
@@ -1084,7 +1072,11 @@ def render_step_2():
     st.caption("Regenerates ALL prompt-bearing still images via local Codex `gpt-image-2` and ALL audio via TTS in parallel. This overwrites existing assets.")
 
     if st.button("Regenerate Everything (Images + Audio)", type="primary", key="regen_everything_parallel"):
-        tts_kwargs = _tts_kwargs_from_state()
+        try:
+            tts_kwargs = _tts_kwargs_from_state()
+        except ValueError as exc:
+            st.error(str(exc))
+            return
         total = len(scenes)
         if total == 0:
             st.warning("No scenes found.")
@@ -1234,7 +1226,7 @@ def render_step_3():
     st.divider()
 
     # Preview stats
-    duration = get_video_duration(scenes)
+    duration = get_video_duration(scenes, project_dir)
     st.write(f"**Scenes:** {len(scenes)}")
     st.write(f"**Estimated Duration:** {duration:.1f} seconds ({duration/60:.1f} minutes)")
 
@@ -1308,7 +1300,7 @@ def render_step_3():
 
     guessed_patient_id = infer_patient_id(project_dir.name) if project_dir else None
     patient_id = st.text_input(
-        "Patient ID (MM-DD-YYYY-N)",
+        "Patient ID (XX_MM-DD-YYYY)",
         value=guessed_patient_id or "",
         help="Used to locate the latest qEEG Council run (Stage 4 consolidation + Stage 1 data pack).",
         key="qc_patient_id",
@@ -1372,7 +1364,7 @@ def render_step_3():
     run_qc = st.button("Run QC + Publish", type="primary", key="qc_publish_btn")
     if run_qc:
         if not patient_id.strip():
-            st.error("Enter a Patient ID (MM-DD-YYYY-N) to run QC.")
+            st.error("Enter a Patient ID (XX_MM-DD-YYYY) to run QC.")
             return
 
         status = st.empty()
@@ -1408,7 +1400,7 @@ def render_step_3():
                     "elevenlabs_use_speaker_boost": bool(st.session_state.tts_elevenlabs_use_speaker_boost),
                 }
             else:
-                qc_tts_voice = st.session_state.tts_voice
+                qc_tts_voice = _tts_kwargs_from_state()["voice"]
                 qc_tts_speed = float(st.session_state.tts_speed)
                 qc_elevenlabs = {}
 

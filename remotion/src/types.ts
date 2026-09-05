@@ -134,10 +134,47 @@ export const NarrationSlideSchema = z.object({
 });
 export type NarrationSlideProps = z.infer<typeof NarrationSlideSchema>;
 
+export const ViewAngleSchema = z.union([
+  z.enum([
+    "topdown",
+    "frontal",
+    "lateral-left",
+    "lateral-right",
+    "three-quarter",
+    "three-quarter-right",
+    "posterior",
+  ]),
+  z.object({
+    azimuth: z.number(),
+    elevation: z.number(),
+    distance: z.number().optional(),
+  }),
+]);
+export type ViewAngle = z.infer<typeof ViewAngleSchema>;
+
+export const Brain3DSceneSchema = z.object({
+  headline: z.string(),
+  caption: z.string().optional(),
+  viewAngle: ViewAngleSchema.optional(),
+  regions: z
+    .array(
+      z.object({
+        name: z.string(),
+        value: z.string().optional(),
+        status: z.enum(["improved", "stable", "declined", "flagged"]).optional(),
+      }),
+    )
+    .optional(),
+  rotateSpeed: z.number().optional(),
+  accentColor: z.string().optional(),
+});
+export type Brain3DSceneProps = z.infer<typeof Brain3DSceneSchema>;
+
 // Union of all family names
 export const COMPOSITION_FAMILIES = [
   "cover_hook",
   "brain_region_focus",
+  "brain_3d_scene",
   "metric_card",
   "metric_comparison",
   "timeline_progression",

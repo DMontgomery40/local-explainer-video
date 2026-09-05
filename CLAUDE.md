@@ -33,7 +33,7 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 **Core modules**:
 - `core/director.py` - LLM-based storyboard generation (5-15 scenes from clinical text)
-- `core/image_gen.py` - Replicate API image generation (Qwen + Imagen 4), with style suffix auto-appended
+- `core/image_gen.py` - Replicate API (Qwen Image), with style suffix auto-appended
 - `core/voice_gen.py` - Kokoro (local) / ElevenLabs / OpenAI TTS
 - `core/video_assembly.py` - MoviePy + ffmpeg, hard cuts only, 24fps, GPU acceleration
 
@@ -49,7 +49,7 @@ clinician portal sync folder.
 - Numeric truth: qEEG Council **Stage 1 `_data_pack.json`**
 
 **Models**
-- Narrative judge: **Claude Opus 4.6** (Anthropic API)
+- Narrative judge: **Claude Opus 4.5** (Anthropic API)
 - Visual judge: **Gemini 3 Flash** via **CLIProxyAPI** (vision over rendered slide PNGs)
 - Fixes: **Qwen Image Edit** (Replicate) — surgical edits only
 
@@ -62,7 +62,7 @@ clinician portal sync folder.
   Enable auto-fix explicitly in the UI or with `--auto-fix-images`.
 
 **How it works**
-1. Loads qEEG Council ground truth for the patient ID (`MM-DD-YYYY-N`) from `qEEG-analysis/data/app.db`
+1. Loads qEEG Council ground truth for the patient ID (`XX_MM-DD-YYYY`) from `qEEG-analysis/data/app.db`
 2. Runs Opus narrative QC on `plan.json` (may apply high-confidence string replacements; blocks on critical issues)
 3. Runs Gemini visual QC on each rendered slide PNG and blocks if issues are found (optionally applies fixes via image edit)
 4. Re-renders the MP4, then publishes it to:
@@ -78,14 +78,14 @@ clinician portal sync folder.
 
 Run it:
 - Streamlit: Step 3 → **QC + Publish**
-- CLI (check-only): `python3.10 qc_publish.py --project 09-23-1982-0`
-- CLI (auto-fix images): `python3.10 qc_publish.py --project 09-23-1982-0 --auto-fix-images`
+- CLI (check-only): `python3.10 qc_publish.py --project ZZ_01-01-1900`
+- CLI (auto-fix images): `python3.10 qc_publish.py --project ZZ_01-01-1900 --auto-fix-images`
 - Batch: `python3.10 qc_publish_batch.py` (latest version per patient, valid patient IDs only)
 
 ## Image Action Gotchas (Generate vs Edit)
 
 These are intentionally different codepaths/models:
-- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → selected Replicate model (`qwen/qwen-image-2512` or `google/imagen-4`) (new image)
+- **Generate/Regenerate Image** → `core/image_gen.generate_image()` → `qwen/qwen-image-2512` (new image)
 - **Edit Image** → `core/image_gen.edit_image()` → DashScope `qwen-image-edit-max` (if `DASHSCOPE_API_KEY` is set) or Replicate `qwen/qwen-image-edit-2511` (fallback). Override via sidebar **Image Edit** or `IMAGE_EDIT_MODEL`.
 - **Refine Prompt** → prompt rewrite step; avoid for QC automation
 
@@ -184,13 +184,76 @@ ElevenLabs (Flash v2.5) notes:
 Base pipeline (`.env`):
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (director)
 - `REPLICATE_API_TOKEN` (image gen/edit)
-- `IMAGE_MODEL` (optional default image model; e.g., `qwen/qwen-image-2512` or `google/imagen-4`)
 - `ELEVENLABS_API_KEY` (optional; required if selecting ElevenLabs TTS)
 
 QC + Publish (optional):
 - `CLIPROXY_BASE_URL` / `CLIPROXY_API_KEY` (Gemini visual QC)
 - `QEEG_ANALYSIS_DIR` (defaults to `../qEEG-analysis`)
 - `QEEG_BACKEND_URL` (defaults to `http://127.0.0.1:8000`)
+
+## Non-qEEG Hybrid Video Workflow
+
+The pipeline also supports **hybrid explainer videos** that mix AI-generated static images with pre-recorded video clips (e.g., screen recordings of a live demo app). This workflow bypasses the qEEG director and QC gates entirely.
+
+### When to use this
+
+Any explainer video where some scenes are static slides (AI images + narration) and others are live demo footage with narration overlay. Examples: product demos, interview portfolio pieces, technical walkthroughs.
+
+### Workflow
+
+1. **Create `plan.json` manually** (not via `director.py`). Same schema as qEEG plans but written by hand. Each scene has `id`, `uid`, `title`, `narration`, `visual_prompt`, and path fields for `image_path`, `audio_path`. Video scenes also have clip references.
+
+2. **Record demo clips** — screen record the app (QuickTime, Playwright, etc.) and cut clips with ffmpeg:
+   ```bash
+   ffmpeg -i recording.mov -ss 00:00:02 -t 20 -c:v libx264 -crf 18 -c:a aac clips/scene_004.mp4
+   ```
+
+3. **Generate assets via Streamlit** — run `./start.sh`, select the project, and use the normal UI to:
+   - Pick ElevenLabs voice (e.g., Antoni, Flash v2.5, 1.15x speed)
+   - Generate/approve AI images for static scenes
+   - Generate narration audio for ALL scenes (both image and video)
+
+4. **Restore pre-made images** — if any scene uses a hand-crafted image (e.g., a research paper figure), Qwen will overwrite it during batch generation. Keep a backup and restore after Streamlit:
+   ```bash
+   cp scene_003_research_backup.png images/scene_003.png
+   ```
+
+5. **Run the standalone `assemble.py`** in the project directory. This script:
+   - Reads `plan.json` for scene order
+   - Uses a `VIDEO_SCENES` dict mapping scene IDs to clip files
+   - **Image scenes**: loops the static PNG for the duration of narration audio
+   - **Video scenes**: overlays narration on the clip (`-map 0:v:0 -map 1:a:0`), freezes last frame if narration exceeds clip length (`tpad=stop_mode=clone`)
+   - Concatenates all segments into the final MP4
+
+6. **Verify timing** — check that video clip durations cover narration. Frozen frame > 5s is noticeable; re-record or find additional footage if needed.
+
+### Key files (per project)
+
+```
+projects/<name>/
+  plan.json              # Storyboard (manual)
+  assemble.py            # Standalone hybrid assembly script
+  generate_images.py     # Optional batch Qwen image gen (skips video scenes)
+  images/                # AI-generated + pre-made images
+  audio/                 # ElevenLabs narration WAV files
+  clips/                 # Pre-recorded demo video clips
+  tmp_segments/          # Intermediate ffmpeg segments (auto-created)
+  <name>.mp4             # Final assembled video
+```
+
+### Narration tips for ElevenLabs
+
+- Spell out all numbers as words ("forty-seven", not "47")
+- Use commas and ellipses (`...`) liberally for natural pacing
+- In visual prompts: use color names (not hex codes), double-quote any literal text
+- Keep visual prompt digits for on-screen text accuracy ("70M Params")
+
+### Assembly details
+
+- Target resolution: 1664x928 (16:9), 30fps
+- Background pad color: `#0a0a0f` (near-black)
+- Codec: libx264, CRF 23, AAC 128k
+- `tpad=stop_mode=clone` freezes the last video frame when narration runs longer than the clip
 
 ## Constraints
 
