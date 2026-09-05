@@ -149,16 +149,16 @@ def _find_phrase_in_words(
     if n == 0:
         return None
 
-    for i in range(len(words) - n + 1):
-        window = " ".join(normalize_text(words[j].word) for j in range(i, i + n))
-        if phrase_norm in window or window in phrase_norm:
-            return words[i].start
-
-    # Single-word fallback
-    if n == 1:
-        for w in words:
-            if phrase_norm in normalize_text(w.word):
-                return w.start
+    # Whisper entries can contain multiple words or hyphenated numbers. Keep
+    # each normalized token's source timestamp while matching whole sequences.
+    tokens = [
+        (token, word.start)
+        for word in words
+        for token in normalize_text(word.word).split()
+    ]
+    for i in range(len(tokens) - n + 1):
+        if [token for token, _ in tokens[i:i + n]] == phrase_tokens:
+            return tokens[i][1]
 
     return None
 

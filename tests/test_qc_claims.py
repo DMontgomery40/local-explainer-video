@@ -22,3 +22,20 @@ def test_comparative_preserves_sign_and_tolerance(baseline,target,actual,direct,
 
 def test_comparative_zero_baseline_is_not_a_percentage():
     assert not _validate_comparative({'metric':'x_change','value':0},{'facts':{'x_session1':0,'x_session3':20}}).passed
+
+@pytest.mark.parametrize('kind', ['numeric_vlaue', 'future_type', '', None, 42])
+@pytest.mark.parametrize('mixed', [False, True])
+def test_unsupported_claims_fail_with_complete_report(tmp_path, kind, mixed):
+    import json
+    from core.qc_claims import validate_claims, write_claims_report
+    claims = [{'scene_id': 7, 'type': kind, 'metric': 'x', 'value': 4}]
+    if mixed:
+        claims.append({'scene_id': 8, 'type': 'numeric_value', 'metric': 'x', 'value': 4})
+    result = validate_claims(claims, {'facts': {'x': 4}})
+    assert not result.passed and result.errors
+    assert len(result.results) == len(claims)
+    assert result.results[0].scene_id == 7 and not result.results[0].passed
+    assert 'unsupported' in result.results[0].detail.lower()
+    path = tmp_path/'claims.json'; write_claims_report(result, path)
+    report = json.loads(path.read_text())
+    assert report['total_claims'] == len(claims) and report['failed_claims'] == 1

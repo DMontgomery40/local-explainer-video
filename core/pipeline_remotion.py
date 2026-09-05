@@ -155,27 +155,36 @@ def run_pipeline(
     segments_dir.mkdir(parents=True, exist_ok=True)
     segments: list[Path] = []
 
+    failures = {}
     for i, scene in enumerate(scenes):
-        clip = scene.get("clip_path")
-        audio = scene.get("audio_path")
-        if not clip or not audio or not Path(clip).exists() or not Path(audio).exists():
-            continue
         seg = segments_dir / f"seg_{i:03d}.mp4"
-        cmd = [ffmpeg, "-y", "-i", clip, "-i", audio,
-               "-c:v", "libx264", "-preset", "fast", "-crf", "20",
-               "-c:a", "aac", "-b:a", "128k",
-               "-map", "0:v:0", "-map", "1:a:0",
-               "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-               "-shortest", str(seg)]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if r.returncode == 0:
+        try:
+            clip = scene.get("clip_path")
+            audio = scene.get("audio_path")
+            if not all(p and Path(p).is_file() and Path(p).stat().st_size > 0 for p in (clip, audio)):
+                raise ValueError("Required scene clip or narration audio is missing")
+            # A prior segment cannot satisfy a successful command with no output.
+            seg.unlink(missing_ok=True)
+            cmd = [ffmpeg, "-y", "-i", clip, "-i", audio,
+                   "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                   "-c:a", "aac", "-b:a", "128k",
+                   "-map", "0:v:0", "-map", "1:a:0",
+                   "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                   "-shortest", str(seg)]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                raise RuntimeError(f"Scene mux failed: {r.stderr[-200:]}")
+            if not seg.is_file() or seg.stat().st_size == 0:
+                raise RuntimeError("Scene mux produced no segment")
             segments.append(seg)
-        else:
-            _log(f"[{i:2d}] mux fail")
+        except Exception as exc:
+            failures[str(i)] = exc
+            _log(f"[{i:2d}] mux failed: {exc}")
 
+    if failures:
+        raise AssetFailures(failures)
     if not segments:
-        _log("No segments to assemble!")
-        return plan_path
+        raise ValueError("No scenes to assemble")
 
     concat_file = project_dir / "concat.txt"
     with open(concat_file, "w") as f:
@@ -339,7 +348,7 @@ Start with: const frame = useCurrentFrame();
 End with: return (...);"""
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
     import argparse
     from dotenv import load_dotenv
     load_dotenv(REPO_ROOT / ".env")
@@ -352,11 +361,16 @@ if __name__ == "__main__":
     parser.add_argument("--speed", type=float, default=1.15)
     parser.add_argument("--skip-tts", action="store_true")
     parser.add_argument("--skip-whisper", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     text = None
-    if args.input_text and args.input_text.exists():
-        text = args.input_text.read_text()[:6000]
+    if args.input_text is not None:
+        try:
+            text = args.input_text.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            parser.error(f"Cannot read requested input report: {exc}")
+        if not text.strip():
+            parser.error("Requested input report is empty")
 
     run_pipeline(
         args.project_dir,
@@ -367,3 +381,7 @@ if __name__ == "__main__":
         skip_tts=args.skip_tts,
         skip_whisper=args.skip_whisper,
     )
+
+
+if __name__ == "__main__":
+    main()

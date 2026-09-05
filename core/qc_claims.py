@@ -321,10 +321,15 @@ def validate_claims(
         validator = _VALIDATORS.get(claim_type)
 
         if validator is None:
-            warnings.append(f"Unknown claim type '{claim_type}' in scene {claim.get('scene_id', '?')}")
-            continue
-
-        result = validator(claim, data_pack)
+            result = ClaimResult(
+                scene_id=claim.get("scene_id", "?"),
+                claim_type=claim_type,
+                metric=str(claim.get("metric", "")),
+                passed=False,
+                detail=f"Unsupported claim type: {claim_type!r}",
+            )
+        else:
+            result = validator(claim, data_pack)
         results.append(result)
 
         if not result.passed:

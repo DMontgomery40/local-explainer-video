@@ -38,6 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from core.scene_modes import plan_has_cathode_motion_scenes
+
 # One reader for the clinic ID, shared with core/qc_publish. Two copies is
 # how this started: the duplicate had already drifted to a different video
 # suffix rule, so the same folder name resolved to a patient in one and to
@@ -200,6 +202,9 @@ def build_candidate(repo_name: str, repo_root: Path, project_dir: Path) -> Proje
         return None
 
     plan = load_json(plan_path)
+    if plan_has_cathode_motion_scenes(plan):
+        print(f"Skipping motion plan in static image batch: {project_dir.name}")
+        return None
     scenes = plan.get("scenes")
     if not isinstance(scenes, list):
         scenes = []
@@ -497,11 +502,13 @@ def run_codex_refresh(candidate: ProjectCandidate, *, run_dir: Path, model: str 
     from core.image_gen import build_codex_image_prompt, _run_codex_exec_image
     from core.generation_receipts import atomic_bytes, atomic_json, digest_bytes
 
+    plan_bytes = Path(candidate.plan_path).read_bytes()
+    plan = json.loads(plan_bytes)
+    if plan_has_cathode_motion_scenes(plan):
+        raise ValueError("Static image batch cannot refresh a motion plan")
     run_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = run_dir / f"{candidate.patient_id}.codex.jsonl"
     final_message_path = run_dir / f"{candidate.patient_id}.final.txt"
-    plan_bytes = Path(candidate.plan_path).read_bytes()
-    plan = json.loads(plan_bytes)
     completed = []
     for index, scene in enumerate(plan.get("scenes", [])):
         if not isinstance(scene, dict) or not str(scene.get("visual_prompt") or "").strip():
@@ -559,6 +566,8 @@ def determine_output_filename(plan: dict[str, Any], project_dir: Path, patient_i
 
 def rerender_local_explainer(candidate: ProjectCandidate) -> Path:
     plan = load_json(Path(candidate.plan_path))
+    if plan_has_cathode_motion_scenes(plan):
+        raise ValueError("Static image batch cannot render a motion plan")
     project_dir = Path(candidate.project_dir)
     output_filename = determine_output_filename(plan, project_dir, candidate.patient_id)
     fps = int(plan.get("meta", {}).get("fps") or 24) if isinstance(plan.get("meta"), dict) else 24
@@ -794,6 +803,8 @@ def main() -> int:
         }
 
         try:
+            if plan_has_cathode_motion_scenes(load_json(Path(candidate.plan_path))):
+                raise ValueError("Static image batch cannot process a motion plan")
             backup_dir = ensure_backup_dir(candidate)
             patient_result["backup_dir"] = str(backup_dir)
             print(f"Backup ready: {backup_dir}")

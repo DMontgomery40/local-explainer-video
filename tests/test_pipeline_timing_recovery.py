@@ -113,3 +113,67 @@ def test_timing_response_survives_plan_save_interruption(tmp_path, monkeypatch):
     pipeline._generate_scene_code_with_timing(plan['scenes'], plan, path)
     assert client.messages.stream.call_count == 1
     assert json.loads(path.read_text())['scenes'][0]['timing_code_receipt']
+
+@pytest.mark.parametrize('content', ['x'*6001+'FINAL SESSION FINDINGS', 'short complete report'], ids=['long-report','short-report'])
+def test_remotion_cli_passes_entire_report(tmp_path, monkeypatch, content):
+    import runpy, sys
+    from core import director
+    source=tmp_path/'source.txt'; source.write_text(content)
+    calls=[]
+    class Captured(Exception): pass
+    def capture(text):
+        calls.append(text)
+        raise Captured()
+    monkeypatch.setattr(director, 'generate_storyboard_api', capture)
+    monkeypatch.setattr(sys, 'argv', ['pipeline',str(tmp_path/'project'), '--input-text', str(source)])
+    monkeypatch.delitem(sys.modules, 'core.pipeline_remotion', raising=False)
+    with pytest.raises(Captured):
+        runpy.run_module('core.pipeline_remotion', run_name='__main__')
+    assert calls == [content]
+
+@pytest.mark.parametrize('content', [None, '', '   '])
+def test_remotion_cli_rejects_missing_or_blank_requested_input(tmp_path, monkeypatch, content):
+    from core import pipeline_remotion as pipeline
+    source=tmp_path/'source.txt'
+    if content is not None: source.write_text(content)
+    monkeypatch.setattr(pipeline, 'run_pipeline', lambda *a,**k:pytest.fail('Ran wrong existing plan'))
+    with pytest.raises(SystemExit) as error:
+        pipeline.main([str(tmp_path/'project'), '--input-text', str(source)])
+    assert error.value.code == 2
+
+@pytest.mark.parametrize('failure', ['mux', 'timeout', 'missing-output', 'empty-output', 'missing-audio', 'missing-clip'])
+def test_remotion_mux_requires_every_planned_scene(tmp_path, monkeypatch, failure):
+    from core import pipeline_remotion as pipeline, remotion_bridge
+    (tmp_path/'audio').mkdir(); scenes=[]
+    for i in range(3):
+        audio=tmp_path/'audio'/f'scene_{i:03d}.wav'
+        if not (failure=='missing-audio' and i==1): audio.write_bytes(b'audio')
+        scenes.append({'scene_code':'code','narration':'speech'})
+    (tmp_path/'plan.json').write_text(json.dumps({'scenes':scenes}))
+    prior=tmp_path/f'{tmp_path.name}.mp4';prior.write_bytes(b'original complete')
+    (tmp_path/'segments').mkdir();(tmp_path/'segments/seg_001.mp4').write_bytes(b'stale segment')
+    monkeypatch.setattr(pipeline,'_generate_scene_code_with_timing',lambda *a:None)
+    monkeypatch.setattr(remotion_bridge,'duration_frames',lambda *a:30)
+    def render(**kwargs):
+        if failure=='missing-clip' and kwargs['output_path'].name=='scene_001.mp4':return
+        kwargs['output_path'].write_bytes(b'clip')
+    monkeypatch.setattr(remotion_bridge,'render_dynamic_scene',render)
+    calls=[]
+    def run(cmd,**kwargs):
+        assert 'concat' not in cmd, 'Concatenated an incomplete set'
+        calls.append(cmd)
+        bad=Path(cmd[-1]).name=='seg_001.mp4'
+        if bad and failure=='timeout':raise pipeline.subprocess.TimeoutExpired(cmd,120)
+        if not (bad and failure in ['missing-output','mux']):Path(cmd[-1]).write_bytes(b'' if bad and failure=='empty-output' else b'segment')
+        return SimpleNamespace(returncode=1 if bad and failure=='mux' else 0,stderr='synthetic error')
+    monkeypatch.setattr(pipeline.subprocess,'run',run)
+    with pytest.raises(RuntimeError):pipeline.run_pipeline(tmp_path,skip_tts=True,skip_whisper=True)
+    assert prior.read_bytes()==b'original complete'
+    assert any(Path(cmd[-1]).name=='seg_002.mp4' for cmd in calls)
+
+
+def test_remotion_cli_without_input_retains_existing_plan_mode(tmp_path, monkeypatch):
+    from core import pipeline_remotion as pipeline
+    calls=[]; monkeypatch.setattr(pipeline,'run_pipeline',lambda *a,**k:calls.append(k))
+    pipeline.main([str(tmp_path)])
+    assert calls[0]['input_text'] is None

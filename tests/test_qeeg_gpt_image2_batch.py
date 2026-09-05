@@ -469,3 +469,39 @@ def test_native_refresh_requires_every_run_bound_image_before_replacing_targets(
         assert all(p.read_bytes()!=raw for p,raw in originals.items())
         mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
         assert len(calls)==2, 'same run recovers original response receipts without redispatch'
+
+import pytest
+
+@pytest.mark.parametrize('motion', [
+    {'scene_type':'motion'}, {'scene_type':' MOTION '},
+    {'composition':{'mode':'native'}}, {'composition':{'manifestation':'native_remotion'}},
+])
+def test_static_batch_rejects_motion_with_poster_and_prompt(tmp_path, monkeypatch, motion):
+    mod=_load_module();project=tmp_path/'projects/ZZ_01-01-1900'
+    _write_plan(project, {'scenes':[{'visual_prompt':'static','scene_type':'image'}]})
+    candidate=mod.build_candidate('local-explainer-video',tmp_path,project)
+    assert candidate
+    _write_plan(project, {'scenes':[{'visual_prompt':'static','scene_type':'image'},dict(motion,visual_prompt='motion poster',image_path='images/poster.png')]})
+    assert mod.build_candidate('local-explainer-video',tmp_path,project) is None
+    from core import image_gen
+    monkeypatch.setattr(image_gen,'_run_codex_exec_image',lambda **k:pytest.fail('Paid static refresh for motion'))
+    monkeypatch.setattr(mod.subprocess,'run',lambda *a,**k:pytest.fail('Static render for motion'))
+    with pytest.raises(ValueError,match='motion'):
+        mod.run_codex_refresh(candidate,run_dir=tmp_path/'run',model=None)
+    with pytest.raises(ValueError,match='motion'):
+        mod.rerender_local_explainer(candidate)
+    assert not (tmp_path/'run').exists()
+
+
+def test_static_batch_plan_changed_after_discovery_fails_before_backup(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    mod=_load_module();project=tmp_path/'projects/ZZ_01-01-1900'
+    _write_plan(project, {'scenes':[{'visual_prompt':'static'}]})
+    candidate=mod.build_candidate('local-explainer-video',tmp_path,project)
+    _write_plan(project, {'scenes':[{'scene_type':'motion','visual_prompt':'poster'}]})
+    monkeypatch.setattr(mod,'parse_args',lambda:SimpleNamespace(patients='',run_label='test',dry_run=False,model='',skip_thrylen_sync=True,max_patients=0))
+    monkeypatch.setattr(mod,'_patient_results_dir',lambda *a:tmp_path/'results')
+    monkeypatch.setattr(mod,'discover_latest_prompt_projects',lambda:[candidate])
+    monkeypatch.setattr(mod,'ensure_backup_dir',lambda *a:pytest.fail('Backed up invalid motion candidate'))
+    assert mod.main()==1
+    assert json.loads((tmp_path/'results/results.json').read_text())['results'][0]['ok'] is False
