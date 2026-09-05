@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import uuid
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -350,6 +351,18 @@ def discover_latest_prompt_projects(
     return sorted(selected, key=lambda item: item.patient_id)
 
 
+def project_asset_path(candidate: ProjectCandidate, raw: Any) -> Path | None:
+    """Resolve an existing asset within its owning project, independently of cwd."""
+    if not str(raw or "").strip():
+        return None
+    root = Path(candidate.project_dir).resolve()
+    path = Path(str(raw)).expanduser()
+    path = (path if path.is_absolute() else root / path).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"Asset escapes project directory: {raw}")
+    return path if path.is_file() else None
+
+
 def ensure_backup_dir(candidate: ProjectCandidate) -> Path:
     project_dir = Path(candidate.project_dir)
     backup_dir = project_dir / f"images_pre_gpt_image2_{utc_now().date().isoformat()}"
@@ -360,8 +373,8 @@ def ensure_backup_dir(candidate: ProjectCandidate) -> Path:
         if not isinstance(scene, dict):
             continue
         visual_prompt = str(scene.get("visual_prompt") or "").strip()
-        image_path = Path(str(scene.get("image_path") or "")).expanduser()
-        if not visual_prompt or not image_path.exists():
+        image_path = project_asset_path(candidate, scene.get("image_path"))
+        if not visual_prompt or image_path is None:
             continue
         dst = backup_dir / image_path.name
         if not dst.exists():
@@ -416,8 +429,8 @@ def normalize_project_images(candidate: ProjectCandidate) -> list[dict[str, Any]
         visual_prompt = str(scene.get("visual_prompt") or "").strip()
         if not image_path_raw or not visual_prompt:
             continue
-        image_path = Path(image_path_raw).expanduser()
-        if not image_path.exists():
+        image_path = project_asset_path(candidate, image_path_raw)
+        if image_path is None:
             continue
         before = normalize_image_to_target(image_path)
         normalized.append(
@@ -440,14 +453,14 @@ def build_codex_prompt(candidate: ProjectCandidate) -> str:
         if not isinstance(scene, dict):
             continue
         visual_prompt = str(scene.get("visual_prompt") or "").strip()
-        image_path = str(scene.get("image_path") or "").strip()
-        if visual_prompt and image_path:
+        image_path = project_asset_path(candidate, scene.get("image_path"))
+        if visual_prompt and image_path is not None:
             scene_id = int(scene.get("id", 0))
             prompt_scene_ids.append(scene_id)
             scene_jobs.append(
                 {
                     "scene_id": scene_id,
-                    "image_path": image_path,
+                    "image_path": str(image_path),
                     "visual_prompt": visual_prompt,
                 }
             )
@@ -633,13 +646,13 @@ def mirror_to_cathode(candidate: ProjectCandidate, video_path: Path) -> Path:
         if not isinstance(scene, dict):
             continue
         scene_id = int(scene.get("id", 0))
-        src_img = Path(str(scene.get("image_path") or ""))
-        if src_img.exists():
+        src_img = project_asset_path(candidate, scene.get("image_path"))
+        if src_img is not None:
             dst_img = cathode_dir / "images" / f"scene_{scene_id:03d}.png"
             shutil.copy2(src_img, dst_img)
             scene["image_path"] = str(dst_img)
-        src_audio = Path(str(scene.get("audio_path") or ""))
-        if src_audio.exists():
+        src_audio = project_asset_path(candidate, scene.get("audio_path"))
+        if src_audio is not None:
             dst_audio = cathode_dir / "audio" / f"scene_{scene_id:03d}.wav"
             shutil.copy2(src_audio, dst_audio)
             scene["audio_path"] = str(dst_audio)
@@ -668,18 +681,22 @@ def publish_to_portal(patient_id: str, video_path: Path) -> Path:
     out_dir = PORTAL_PATIENTS_DIR / patient_id
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"{patient_id}.mp4"
-    tmp = dest.with_name(f".{dest.name}.partial")
+    tmp = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.partial")
     try:
+        try:
+            os.link(video_path, tmp)
+        except OSError:
+            shutil.copy2(video_path, tmp)
+        with tmp.open("rb") as staged:
+            os.fsync(staged.fileno())
+        os.replace(tmp, dest)
+        directory_fd = os.open(out_dir, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
         tmp.unlink(missing_ok=True)
-    except Exception:
-        pass
-    if dest.exists():
-        dest.unlink()
-    try:
-        os.link(video_path, dest)
-    except Exception:
-        shutil.copy2(video_path, tmp)
-        tmp.replace(dest)
     return dest
 
 

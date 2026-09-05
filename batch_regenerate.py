@@ -212,7 +212,7 @@ def regenerate_project(project_dir: Path, dry_run: bool = False) -> bool:
     for i, scene in enumerate(scenes):
         print(f"  Scene {i+1}/{len(scenes)}: {scene.get('title', 'Untitled')[:40]}...")
         try:
-            path = generate_scene_image(scene, project_dir)
+            path = generate_scene_image(scene, project_dir, model=new_plan["meta"]["image_model"])
             scene["image_path"] = str(path)
             save_plan(project_dir, new_plan)
         except Exception as e:

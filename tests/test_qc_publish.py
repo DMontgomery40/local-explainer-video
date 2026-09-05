@@ -116,3 +116,17 @@ def test_every_entry_point_reads_the_patient_id_through_one_module():
     # And the case the two copies actually disagreed on now has one answer.
     for name in ("BT_12-11-1963_V4", "BT_12-11-1963_v4.1"):
         assert qc_reader(name) == batch_mod.infer_patient_id(name) == "BT_12-11-1963"
+
+def test_explicit_qwen_batch_passes_recorded_model(tmp_path, monkeypatch):
+    import json
+    import batch_regenerate as batch
+    (tmp_path/'plan.json').write_text(json.dumps({'meta':{'input_text':'synthetic','tts_provider':'elevenlabs'}}))
+    monkeypatch.setattr(batch,'ARGS',{})
+    monkeypatch.setattr(batch,'generate_storyboard',lambda *a,**k:[{'id':0,'title':'one','narration':'one','visual_prompt':'one'}])
+    calls=[]
+    monkeypatch.setattr(batch,'generate_scene_image',lambda *a,**k:calls.append(k) or tmp_path/'one.png')
+    monkeypatch.setattr(batch,'generate_scene_audio',lambda *a,**k:tmp_path/'one.wav')
+    monkeypatch.setattr(batch,'assemble_video',lambda *a,**k:tmp_path/'one.mp4')
+    assert batch.regenerate_project(tmp_path)
+    plan=json.loads((tmp_path/'plan.json').read_text())
+    assert calls[0]['model']==plan['meta']['image_model']=='qwen/qwen-image-2512'

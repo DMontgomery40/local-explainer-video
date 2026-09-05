@@ -190,6 +190,8 @@ def test_build_codex_prompt_forbids_secret_search_and_embeds_scene_jobs(tmp_path
             ],
         },
     )
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(b"synthetic image")
     candidate = mod.build_candidate("local-explainer-video", tmp_path, project_dir)
 
     prompt = mod.build_codex_prompt(candidate)
@@ -325,3 +327,103 @@ def test_the_engine_directory_is_read_from_the_same_env_var_as_the_publisher(
 
     monkeypatch.delenv("QEEG_ANALYSIS_DIR")
     assert module.default_qeeg_analysis_dir() == publisher_default()
+
+import errno
+import pytest
+from concurrent.futures import ThreadPoolExecutor
+
+
+@pytest.mark.parametrize('absolute', [False, True])
+def test_project_assets_use_project_root_through_backup_prompt_normalize_and_mirror(tmp_path, monkeypatch, absolute):
+    from PIL import Image
+    mod = _load_module()
+    project = tmp_path / 'projects' / 'ZZ_01-01-1900'
+    (project / 'images').mkdir(parents=True)
+    source = project / 'images' / 'scene.png'
+    Image.new('RGB', (32, 20), 'red').save(source)
+    original = source.read_bytes()
+    raw = str(source) if absolute else 'images/scene.png'
+    _write_plan(project, {'scenes': [{'id': 0, 'visual_prompt': 'Synthetic', 'image_path': raw}, {'id': 1, 'visual_prompt': 'Missing', 'image_path': 'missing.png'}]})
+    candidate = mod.build_candidate('local-explainer-video', tmp_path, project)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, 'CATHODE_ROOT', tmp_path / 'mirror')
+    backup = mod.ensure_backup_dir(candidate)
+    assert (backup / 'scene.png').read_bytes() == original
+    prompt = mod.build_codex_prompt(candidate)
+    assert str(source) in prompt and 'missing.png' not in prompt
+    assert mod.normalize_project_images(candidate)[0]['path'] == str(source)
+    mod.ensure_backup_dir(candidate)
+    assert (backup / 'scene.png').read_bytes() == original
+    video = project / 'video.mp4'
+    video.write_bytes(b'video')
+    mirrored = mod.mirror_to_cathode(candidate, video)
+    assert (mirrored / 'images' / 'scene_000.png').read_bytes() == source.read_bytes()
+
+
+@pytest.mark.parametrize('escape', ['relative', 'absolute', 'symlink'])
+@pytest.mark.parametrize('operation', ['ensure_backup_dir', 'normalize_project_images', 'build_codex_prompt', 'mirror_to_cathode'])
+def test_project_asset_escapes_rejected(tmp_path, monkeypatch, escape, operation):
+    mod = _load_module()
+    project = tmp_path / 'ZZ_01-01-1900'
+    project.mkdir()
+    outside = tmp_path / 'outside.png'
+    outside.write_bytes(b'outside')
+    (project / 'link.png').symlink_to(outside)
+    raw = {'relative': '../outside.png', 'absolute': str(outside), 'symlink': 'link.png'}[escape]
+    _write_plan(project, {'scenes': [{'id': 0, 'visual_prompt': 'Synthetic', 'image_path': raw}]})
+    candidate = mod.build_candidate('local-explainer-video', tmp_path, project)
+    monkeypatch.setattr(mod, 'CATHODE_ROOT', tmp_path / 'mirror')
+    with pytest.raises(ValueError, match='project'):
+        getattr(mod, operation)(candidate, outside) if operation == 'mirror_to_cathode' else getattr(mod, operation)(candidate)
+    assert outside.read_bytes() == b'outside'
+
+
+@pytest.mark.parametrize('mode', ['link', 'copy', 'failed_copy', 'interrupted'])
+def test_portal_replacement_preserves_previous_until_success(tmp_path, monkeypatch, mode):
+    mod = _load_module()
+    monkeypatch.setattr(mod, 'PORTAL_PATIENTS_DIR', tmp_path / 'portal')
+    patient = 'ZZ_01-01-1900'
+    dest = tmp_path / 'portal' / patient / f'{patient}.mp4'
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b'previous')
+    source = tmp_path / 'new.mp4'
+    source.write_bytes(b'new complete video')
+    if mode != 'link':
+        def cross_device(*args):
+            assert dest.read_bytes() == b'previous'
+            raise OSError(errno.EXDEV, 'synthetic cross device')
+        monkeypatch.setattr(mod.os, 'link', cross_device)
+    if mode in ('failed_copy', 'interrupted'):
+        def failed_copy(src, target):
+            Path(target).write_bytes(b'partial')
+            raise OSError('disk full') if mode == 'failed_copy' else KeyboardInterrupt()
+        monkeypatch.setattr(mod.shutil, 'copy2', failed_copy)
+        with pytest.raises((OSError, KeyboardInterrupt)):
+            mod.publish_to_portal(patient, source)
+        assert dest.read_bytes() == b'previous'
+    else:
+        assert mod.publish_to_portal(patient, source).read_bytes() == source.read_bytes()
+    assert list(dest.parent.glob('.*.partial')) == []
+
+
+def test_concurrent_portal_publications_use_independent_staging(tmp_path, monkeypatch):
+    import threading
+    mod = _load_module()
+    monkeypatch.setattr(mod, 'PORTAL_PATIENTS_DIR', tmp_path / 'portal')
+    barrier = threading.Barrier(2)
+    original_copy = mod.shutil.copy2
+    def no_link(*args):
+        raise OSError(errno.EXDEV, 'synthetic')
+    def synchronized_copy(src, target):
+        result = original_copy(src, target)
+        barrier.wait(timeout=5)
+        return result
+    monkeypatch.setattr(mod.os, 'link', no_link)
+    monkeypatch.setattr(mod.shutil, 'copy2', synchronized_copy)
+    sources = [tmp_path / f'{i}.mp4' for i in range(2)]
+    for i, source in enumerate(sources):
+        source.write_bytes(bytes([i]) * 4096)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda source: mod.publish_to_portal('ZZ_01-01-1900', source), sources))
+    assert results[0].read_bytes() in [source.read_bytes() for source in sources]
+    assert list(results[0].parent.glob('.*.partial')) == []

@@ -133,18 +133,15 @@ def run_pipeline(
             if not narration:
                 continue
             audio_path = audio_dir / f"scene_{i:03d}.wav"
-            if audio_path.exists():
-                _log(f"[skip] scene_{i:03d}.wav exists")
-            else:
-                _log(f"[tts] scene_{i:03d} ({len(narration.split())} words)...")
-                generate_audio(
-                    text=narration,
-                    output_path=audio_path,
-                    tts_provider=tts_provider,
-                    voice=voice,
-                    speed=speed,
-                )
-                _log(f"[done] {audio_path.name}")
+            _log(f"[tts] scene_{i:03d} ({len(narration.split())} words)...")
+            generate_audio(
+                text=narration,
+                output_path=audio_path,
+                tts_provider=tts_provider,
+                voice=voice,
+                speed=speed,
+            )
+            _log(f"[done] {audio_path.name}")
             scene["audio_path"] = str(audio_path)
         _save_plan(project_dir, plan)
     else:

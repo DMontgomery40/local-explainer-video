@@ -221,7 +221,8 @@ def _validate_threshold(
                            f"Invalid range: {range_val}")
 
     low, high = _to_float(range_val[0]), _to_float(range_val[1])
-    if low is None or high is None:
+    if (low is None or high is None or not math.isfinite(low)
+            or not math.isfinite(high) or low > high or not math.isfinite(actual)):
         return ClaimResult(scene_id, "threshold", metric, False,
                            f"Non-numeric range bounds: {range_val}")
 
@@ -230,7 +231,13 @@ def _validate_threshold(
     if "within" in threshold_claim:
         ok = in_range
         detail = f"Claimed within [{low}, {high}], actual={actual}, in_range={in_range}"
-    elif "outside" in threshold_claim or "above" in threshold_claim or "below" in threshold_claim:
+    elif "above" in threshold_claim:
+        ok = actual > high
+        detail = f"Claimed above {high}, actual={actual}"
+    elif "below" in threshold_claim:
+        ok = actual < low
+        detail = f"Claimed below {low}, actual={actual}"
+    elif "outside" in threshold_claim:
         ok = not in_range
         detail = f"Claimed outside [{low}, {high}], actual={actual}, in_range={in_range}"
     else:
@@ -263,7 +270,7 @@ def _validate_comparative(
         # Try to find the derived percentage directly
         direct = _to_float(_resolve_metric_in_data_pack(data_pack, metric))
         if direct is not None:
-            ok = abs(abs(claimed_pct) - abs(direct)) <= tolerance
+            ok = abs(claimed_pct - direct) <= tolerance
             return ClaimResult(scene_id, "comparative", metric, ok,
                                f"Claimed {claimed_pct}%, data pack has {direct}%")
         return ClaimResult(scene_id, "comparative", metric, False,
@@ -274,7 +281,7 @@ def _validate_comparative(
                            f"Cannot compute percentage: baseline is 0")
 
     actual_pct = ((to_val - from_val) / abs(from_val)) * 100
-    ok = abs(abs(claimed_pct) - abs(actual_pct)) <= tolerance
+    ok = abs(claimed_pct - actual_pct) <= tolerance
 
     if ok:
         return ClaimResult(scene_id, "comparative", metric, True,
