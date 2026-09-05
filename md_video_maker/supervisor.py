@@ -11,6 +11,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -177,6 +178,53 @@ def _media_facts(path):
             'video_codec': videos[0].get('codec_name'), 'size_bytes': path.stat().st_size}
 
 
+def _audio_ids(manifest):
+    assets = manifest.get('assets')
+    if not isinstance(assets, dict):
+        raise ReceiptConflict('Renderer manifest has no complete asset inventory')
+    keys = [key for key in assets if key.startswith('audio-')]
+    try:
+        identities = sorted(int(key.removeprefix('audio-')) for key in keys)
+    except ValueError as exc:
+        raise ReceiptConflict('Renderer audio identities are invalid') from exc
+    if not identities or {f'audio-{identity}' for identity in identities} != set(keys):
+        raise ReceiptConflict('Renderer audio identities are not canonical')
+    return identities
+
+
+def _audio_record(path, scene_id):
+    """Validate the owned WAV itself; never infer audio facts from today's cache."""
+    try:
+        if (path.is_symlink() or path.resolve() != path or not path.is_file()
+            or path.stat().st_nlink != 1):
+            raise ReceiptConflict('Owned audio must be an independent regular file')
+        payload = path.read_bytes()
+        mdvm._validate_asset(path)
+        duration = mdvm.ffprobe_duration(path)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ReceiptConflict('Owned audio duration must be finite and positive')
+        return {'scene_id': scene_id, 'path': str(path), 'sha256': digest_bytes(payload),
+                'duration_seconds': duration, 'size_bytes': len(payload)}
+    except ReceiptConflict:
+        raise
+    except Exception as exc:
+        raise ReceiptConflict(f'Owned narration cannot be validated: {path.name}') from exc
+
+
+def _capture_audio(attempt, project, manifest):
+    records = []
+    for scene_id in _audio_ids(manifest):
+        source = project/'audio'/f'scene_{scene_id:03d}.wav'
+        owned = attempt/'audio'/source.name
+        if source.is_symlink() or source.resolve() != source or not source.is_file():
+            raise ReceiptConflict('Canonical narration is missing or is an indirect path')
+        if owned.is_symlink() or owned.parent.resolve() != owned.parent:
+            raise ReceiptConflict('Owned narration directory must be inside this attempt')
+        atomic_bytes(owned, source.read_bytes())
+        records.append(_audio_record(owned, scene_id))
+    return records
+
+
 def _output(attempt, admission):
     path = attempt/'output.json'
     if not path.exists():
@@ -192,8 +240,21 @@ def _output(attempt, admission):
     if _media_facts(artifact) != output.get('media'):
         raise ReceiptConflict('Attempt-owned media facts differ from saved evidence')
     manifest = attempt/'assets'/attempt.name/'attempt.json'
-    if digest_bytes(manifest.read_bytes()) != output.get('manifest_sha256'):
+    manifest_bytes = manifest.read_bytes()
+    if digest_bytes(manifest_bytes) != output.get('manifest_sha256'):
         raise ReceiptConflict('Renderer manifest differs from the completed output')
+    audio = output.get('audio')
+    expected_ids = _audio_ids(json.loads(manifest_bytes))
+    if (not isinstance(audio, list) or any(not isinstance(record, dict) or
+        type(record.get('scene_id')) is not int for record in audio) or
+        [record['scene_id'] for record in audio] != expected_ids):
+        raise ReceiptConflict('Completed output has no exact complete narration inventory')
+    for record in audio:
+        owned = attempt/'audio'/f"scene_{record['scene_id']:03d}.wav"
+        if (record.get('path') != str(owned) or type(record.get('size_bytes')) is not int or
+            type(record.get('duration_seconds')) not in (int, float) or
+            record != _audio_record(owned, record['scene_id'])):
+            raise ReceiptConflict('Completed narration evidence differs from its owned WAV')
     return output
 
 
@@ -288,10 +349,12 @@ def run_attempt(attempt_dir: Path) -> dict:
             payload = path.read_bytes()
             artifact = attempt/'output.mp4'
             atomic_bytes(artifact, payload)
+            manifest_bytes = (attempt/'assets'/attempt.name/'attempt.json').read_bytes()
+            audio = _capture_audio(attempt, Path(admission['project_dir']), json.loads(manifest_bytes))
             output = {'attempt_id': attempt.name, 'attempt_token': admission['attempt_token'],
                 'admission_sha256': request_digest(admission), 'owner_token': owner['owner_token'],
                 'path': str(artifact), 'sha256': digest_bytes(payload), 'media': facts,
-                'manifest_sha256': digest_bytes((attempt/'assets'/attempt.name/'attempt.json').read_bytes())}
+                'manifest_sha256': digest_bytes(manifest_bytes), 'audio': audio}
             write_owned(attempt/'output.json', output)
         try:
             accepted = admission['input']

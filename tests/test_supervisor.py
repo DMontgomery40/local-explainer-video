@@ -461,3 +461,136 @@ def test_unregistered_output_checks_current_inputs_before_reassembly(project, wo
     assert result['failures']['attempt']['error_type'] == 'ReceiptConflict'
     assert calls(project) == dispatched
     assert not (project.parent/'unexpected-render').exists()
+
+
+@pytest.mark.parametrize('mode', ['generated', 'all_cached', 'mixed'])
+def test_audio_inventory_includes_exact_generated_and_cached_narration(project, worker, mode):
+    import hashlib
+    plan = json.loads((project/'plan.json').read_text())
+    plan['scenes'][0]['id'] = 7
+    plan['scenes'][1]['id'] = 2
+    # mdvm's actual narration path wins over a stale path in the input plan.
+    plan['scenes'][0]['audio_path'] = str(project/'unrelated-old.wav')
+    (project/'plan.json').write_text(json.dumps(plan))
+    if mode != 'generated':
+        seed = prepare(project, 'seed'); worker(seed)
+        assert terminal(seed)['state'] == 'complete'
+    if mode == 'mixed':
+        with supervisor().project_write_lock(project):
+            (project/'audio'/'scene_007.wav').unlink()
+    before = calls(project)
+    a = prepare(project)
+    worker(a)
+    result = terminal(a)
+    assert result['state'] == 'complete'
+    records = result['output']['audio']
+    assert [record['scene_id'] for record in records] == [2, 7]
+    for record in records:
+        owned = a/'audio'/('scene_%03d.wav' % record['scene_id'])
+        canonical = project/'audio'/owned.name
+        assert record['path'] == str(owned)
+        assert owned.read_bytes() == canonical.read_bytes()
+        assert not owned.samefile(canonical)
+        assert record['sha256'] == hashlib.sha256(owned.read_bytes()).hexdigest()
+        assert record['size_bytes'] == owned.stat().st_size
+        assert record['duration_seconds'] == .2
+        if mode == 'all_cached' or (mode == 'mixed' and record['scene_id'] == 2):
+            assert not (a/'assets'/a.name/('audio-'+str(record['scene_id']))/'asset.json').exists()
+    expected = [] if mode == 'all_cached' else ['audio-7'] if mode == 'mixed' else ['image-7','audio-7','image-2','audio-2']
+    assert calls(project)[len(before):] == expected
+
+
+@pytest.mark.parametrize('change', ['absent', 'missing_record', 'duplicate', 'extra', 'string_id', 'boolean_id',
+    'hash', 'size', 'duration', 'zero', 'nan', 'infinite', 'canonical_path', 'missing_file', 'truncated',
+    'symlink', 'directory_symlink', 'hardlink'])
+def test_audio_inventory_rejects_corrupt_or_substituted_evidence(project, worker, change):
+    import hashlib
+    a = prepare(project); worker(a)
+    assert terminal(a)['state'] == 'complete'
+    admission = json.loads((a/'admission.json').read_text())
+    receipt = json.loads((a/'output.json').read_text())
+    record = receipt['audio'][0]
+    owned = Path(record['path'])
+    if change == 'absent': del receipt['audio']
+    elif change == 'missing_record': receipt['audio'].pop()
+    elif change == 'duplicate': receipt['audio'].append(dict(record))
+    elif change == 'extra': receipt['audio'].append({**record, 'scene_id': 99})
+    elif change == 'string_id': record['scene_id'] = str(record['scene_id'])
+    elif change == 'boolean_id': record['scene_id'] = False
+    elif change == 'hash': record['sha256'] = '0'*64
+    elif change == 'size': record['size_bytes'] += 1
+    elif change in {'duration', 'zero', 'nan', 'infinite'}:
+        record['duration_seconds'] = {'duration': 900, 'zero': 0, 'nan': float('nan'), 'infinite': float('inf')}[change]
+    elif change == 'canonical_path': record['path'] = str(project/'audio'/owned.name)
+    elif change == 'missing_file': owned.unlink()
+    elif change == 'truncated':
+        owned.write_bytes(owned.read_bytes()[:48])
+        record['sha256'] = hashlib.sha256(owned.read_bytes()).hexdigest()
+        record['size_bytes'] = owned.stat().st_size
+    elif change in {'symlink', 'hardlink'}:
+        owned.unlink()
+        if change == 'symlink': owned.symlink_to(project/'audio'/owned.name)
+        else: os.link(project/'audio'/owned.name, owned)
+    else:
+        (a/'audio').rename(a/'audio-original')
+        (a/'audio').symlink_to(a/'audio-original', target_is_directory=True)
+    atomic_json(a/'output.json', receipt)
+    # Check the bundle verifier itself; a mismatching outer terminal receipt
+    # alone must not make this test pass without checking the WAV evidence.
+    with pytest.raises(ReceiptConflict): supervisor()._output(a, admission)
+
+
+@pytest.mark.parametrize('phase', ['before_audio_copy', 'after_audio_copy', 'before_output', 'after_output'])
+def test_audio_copy_interruption_recovers_original_bundle_without_respend(project, worker, phase):
+    a = prepare(project)
+    child = worker(a, phase)
+    wait_for(lambda: (project.parent/('barrier-'+phase)).exists())
+    with pytest.raises(AssetBusy):
+        with supervisor().project_write_lock(project): pass
+    registered = (a/'output.json').exists()
+    if phase == 'after_audio_copy':
+        assert len(list((a/'audio').glob('*.wav'))) == 1
+    child.kill(); child.wait()
+    before = calls(project)
+    if registered:
+        with supervisor().project_write_lock(project):
+            (project/'plan.json').unlink()
+            for audio in (project/'audio').glob('*.wav'): audio.unlink()
+    worker(a, 'forbid-render' if registered else '')
+    result = terminal(a)
+    assert result['state'] == 'complete'
+    assert [record['scene_id'] for record in result['output']['audio']] == [0,1]
+    assert all(Path(record['path']).is_file() for record in result['output']['audio'])
+    assert calls(project) == before
+    assert not (project.parent/'unexpected-render').exists()
+
+
+def test_video_only_receipt_is_not_enriched_from_todays_audio(project, worker):
+    a = prepare(project); worker(a)
+    assert terminal(a)['state'] == 'complete'
+    record = json.loads((a/'output.json').read_text())
+    del record['audio']
+    atomic_json(a/'output.json', record)
+    saved = (a/'output.json').read_bytes()
+    (a/'terminal.json').unlink()
+    before = calls(project)
+    with supervisor().project_write_lock(project):
+        (project/'audio'/'scene_000.wav').write_bytes(b'unrelated later audio')
+    worker(a, 'forbid-render')
+    assert terminal(a)['state'] == 'reconciliation_required'
+    assert (a/'output.json').read_bytes() == saved
+    assert calls(project) == before
+    assert not (project.parent/'unexpected-render').exists()
+
+
+@pytest.mark.parametrize('phase', ['missing-canonical-audio', 'truncated-canonical-audio',
+                                  'symlink-canonical-audio', 'indirect-owned-audio-directory'])
+def test_audio_handoff_rejects_missing_invalid_or_indirect_canonical_files(project, worker, phase):
+    a = prepare(project)
+    worker(a, phase)
+    result = terminal(a)
+    assert result['state'] == 'reconciliation_required'
+    assert result['failures']['attempt']['error_type'] == 'ReceiptConflict'
+    assert not (a/'output.json').exists()
+    assert len(calls(project)) == 4
+    assert not list((project.parent/'unsafe-audio').glob('*.wav'))

@@ -29,6 +29,14 @@ if os.getenv('SUPERVISOR_TEST_ROOT'):
         if name == 'output.json': barrier('after_output')
     s.atomic_json = atomic
 
+    original_bytes = s.atomic_bytes
+    def atomic_payload(path, value):
+        owned_audio = path.suffix == '.wav' and path.parent.name == 'audio'
+        if owned_audio: barrier('before_audio_copy')
+        original_bytes(path, value)
+        if owned_audio: barrier('after_audio_copy')
+    s.atomic_bytes = atomic_payload
+
     def generate(kind, scene, directory, **kwargs):
         asset = kind+'-'+str(scene['id'])
         if phase == 'local-'+asset: raise OSError('Synthetic local conversion error')
@@ -52,6 +60,15 @@ if os.getenv('SUPERVISOR_TEST_ROOT'):
     def assemble(scenes, project, *, output_filename, **kwargs):
         path = project/output_filename
         path.write_bytes(Path(os.environ['SUPERVISOR_TEST_FIXTURE']).read_bytes()+output_filename.encode())
+        canonical = project/'audio'/'scene_000.wav'
+        if phase == 'missing-canonical-audio': canonical.unlink()
+        elif phase == 'truncated-canonical-audio': canonical.write_bytes(canonical.read_bytes()[:48])
+        elif phase == 'symlink-canonical-audio':
+            substitute = root/'unrelated.wav'; substitute.write_bytes(canonical.read_bytes())
+            canonical.unlink(); canonical.symlink_to(substitute)
+        elif phase == 'indirect-owned-audio-directory':
+            outside = root/'unsafe-audio'; outside.mkdir()
+            next((root/'state'/'attempts').iterdir()).joinpath('audio').symlink_to(outside, target_is_directory=True)
         return path
     mdvm.assemble_video = assemble
     # runpy's -m execution otherwise creates a second supervisor module whose

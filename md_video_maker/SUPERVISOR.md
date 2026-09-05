@@ -101,3 +101,34 @@ under the project lock. Rejoin recovery by the saved attempt path rather than
 re-preparing the old operation against newer project inputs. A later render cannot change historical
 attempt-owned bytes. File writes use the existing flush/fsync/atomic-replace/
 parent-fsync helpers; no daemon service or wall-clock lease is involved.
+
+Completed output also includes a complete `audio` list, sorted by numeric scene
+ID. Each record has `scene_id`, an absolute owned `path`, `sha256`,
+`duration_seconds`, and `size_bytes`. Paths are exactly
+`ATTEMPT/audio/scene_NNN.wav`, with one record per `audio-*` asset in the hashed
+renderer manifest. Noncontiguous scene IDs retain their actual IDs.
+
+During the same locked output callback, every final canonical narration WAV is
+copied into that attempt-owned directory, including narration reused from cache.
+The copied WAV is validated and probed before the output receipt is registered.
+Only an independent regular file at the exact owned path can satisfy audio
+evidence; symlinks, indirect directories, hardlinks, missing/truncated files,
+changed hashes/sizes/durations, and incomplete/duplicate inventories fail.
+`output.json` is written only after the MP4 and all narration copies are durable,
+and `terminal.json` binds that entire object. An interrupted unregistered copy
+uses the original-input asset recovery path; registered output recovers without
+reading current project audio or invoking providers. Preserve the whole bundle
+for as long as its deliverable/quality evidence is retained.
+
+Consumers match audio records to the original plan by scene ID. For quality
+checks, use copied in-memory scenes whose `audio_path` points to the validated
+owned WAV. Original plan bytes remain frozen; an old explicit absolute
+`audio_path` must not override the owned evidence. Existing duration checks can
+then probe actual narration files and retain their full timing rules.
+
+This renderer release requires the complete audio field. An older release's
+video-only output remains unchanged at its historical path and is read through
+that saved original release. It cannot supply the new full narration contract.
+Missing audio evidence is never repaired by attaching today's mutable cache or
+by automatically spending on generation. No historical receipt is migrated or
+enriched by this extension.
