@@ -371,8 +371,8 @@ def project_asset_path(candidate: ProjectCandidate, raw: Any) -> Path | None:
 
 def ensure_backup_dir(candidate: ProjectCandidate) -> Path:
     project_dir = Path(candidate.project_dir)
-    backup_dir = project_dir / f"images_pre_gpt_image2_{utc_now().date().isoformat()}"
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = project_dir / f"images_pre_gpt_image2_{utc_now().date().isoformat()}_{uuid4().hex}"
+    backup_dir.mkdir(parents=True, exist_ok=False)
 
     plan = load_json(Path(candidate.plan_path))
     for scene in plan.get("scenes", []):

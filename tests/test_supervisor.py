@@ -594,3 +594,35 @@ def test_audio_handoff_rejects_missing_invalid_or_indirect_canonical_files(proje
     assert not (a/'output.json').exists()
     assert len(calls(project)) == 4
     assert not list((project.parent/'unsafe-audio').glob('*.wav'))
+
+@pytest.mark.parametrize('relative', ['remotion/src/Root.tsx', 'remotion/src/scene.ts',
+    'remotion/src/style.css', 'remotion/package.json', 'remotion/package-lock.json',
+    'remotion/tsconfig.json', 'remotion/public/backgrounds/scene.png'])
+@pytest.mark.parametrize('change', ['modify', 'delete', 'add'])
+def test_remotion_release_inputs_bind_admission_and_detached_execution(project, monkeypatch, relative, change):
+    s = supervisor()
+    release = project.parent/'release'; release.mkdir()
+    (release/'renderer-requirements.lock').write_text('locked')
+    source = release/relative; source.parent.mkdir(parents=True, exist_ok=True)
+    if change != 'add': source.write_bytes(b'admitted')
+    monkeypatch.setattr(s, 'RELEASE_ROOT', release)
+    attempt = prepare(project)
+    assert prepare(project) == attempt
+    if change == 'delete': source.unlink()
+    else: source.write_bytes(b'changed')
+    with pytest.raises(ReceiptConflict): prepare(project)
+    calls=[]
+    monkeypatch.setattr(s.mdvm, 'render_project', lambda *a, **k: calls.append(k))
+    outcome = s.run_attempt(attempt)
+    assert outcome['state'] == 'reconciliation_required'
+    assert not calls
+
+
+def test_remotion_release_ignores_installed_caches_and_render_outputs(project, monkeypatch):
+    s = supervisor(); release = project.parent/'release'; release.mkdir()
+    (release/'renderer-requirements.lock').write_text('locked')
+    monkeypatch.setattr(s, 'RELEASE_ROOT', release)
+    admitted = s.release_identity()
+    for name in ['remotion/node_modules/cache.js', 'remotion/out/video.mp4', 'remotion/.cache/build.json']:
+        path=release/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'runtime')
+    assert s.release_identity() == admitted

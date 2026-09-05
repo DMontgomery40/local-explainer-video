@@ -64,3 +64,30 @@ def test_claim_container_valid_shapes_run_claims(tmp_path,shape):
     path=tmp_path/'claims.json';path.write_text(json.dumps(raw))
     result=validate_claims_file(path,{'facts':{'x':4}})
     assert result.passed and len(result.results)==1
+
+@pytest.mark.parametrize('shape', ['list', 'dict', 'nested'])
+@pytest.mark.parametrize('requested', [0, 1, 4, 10])
+def test_numeric_claim_requires_exact_requested_session(shape, requested):
+    from core.qc_claims import _validate_numeric_value
+    evidence_session = 3
+    facts = ([{'metric': 'alpha', 'session_index': evidence_session, 'value': 42}]
+             if shape == 'list' else {'alpha': {'session_3': 42}}
+             if shape == 'nested' else {'alpha': 42, 'alpha_session3': 42})
+    result = _validate_numeric_value({'metric': 'alpha', 'session_index': requested, 'value': 42}, {'facts': facts})
+    assert not result.passed
+    assert 'not found' in result.detail
+
+@pytest.mark.parametrize('shape', ['list', 'dict', 'nested'])
+@pytest.mark.parametrize('session', [0, 1, 3, 10])
+def test_numeric_claim_accepts_own_session_even_when_other_values_differ(shape, session):
+    from core.qc_claims import _validate_numeric_value
+    facts = ([{'metric': 'Alpha', 'session_index': session, 'value': 42},
+              {'metric': 'Alpha', 'session_index': 99, 'value': 73}]
+             if shape == 'list' else {'Alpha': {f'session_{session}': 42, 'session_99': 73}}
+             if shape == 'nested' else {f'Alpha_session{session}': 42, 'Alpha': 73})
+    assert _validate_numeric_value({'metric': 'alpha', 'session_index': session, 'value': 42}, {'facts': facts}).passed
+
+@pytest.mark.parametrize('other_key', ['alpha_session10', 'alpha_extra_session1', 'alpha'])
+def test_numeric_session_never_uses_substring_or_bare_evidence(other_key):
+    from core.qc_claims import _validate_numeric_value
+    assert not _validate_numeric_value({'metric': 'alpha', 'session_index': 1, 'value': 42}, {'facts': {other_key: 42}}).passed

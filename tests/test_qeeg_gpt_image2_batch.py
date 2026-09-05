@@ -532,3 +532,20 @@ def test_batch_new_action_dispatches_same_prompt_while_retry_reuses_receipt(tmp_
     mod.run_codex_refresh(candidate,run_dir=tmp_path/'run-a',model=None);assert len(calls)==1
     mod.run_codex_refresh(candidate,run_dir=tmp_path/'run-b',model=None);assert len(calls)==2
     assert calls[0]!=calls[1], 'Native raw output belongs to its action'
+
+
+def test_same_instant_batch_backups_preserve_each_immediately_previous_image(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    mod = _load_module()
+    monkeypatch.setattr(mod, 'utc_now', lambda: datetime(2026, 9, 5, tzinfo=timezone.utc))
+    project=tmp_path/'projects'/'ZZ_01-01-1900'; (project/'images').mkdir(parents=True)
+    source=project/'images'/'scene.png'
+    _write_plan(project, {'scenes':[{'id':0,'visual_prompt':'Synthetic','image_path':'images/scene.png'}]})
+    candidate=mod.build_candidate('local-explainer-video',tmp_path,project)
+    backups=[]
+    for raw in [b'version-one', b'version-two', b'version-three']:
+        source.write_bytes(raw)
+        backup=mod.ensure_backup_dir(candidate)
+        backups.append((backup,raw))
+    assert len({path for path,_ in backups}) == 3
+    for path,raw in backups: assert (path/'scene.png').read_bytes() == raw

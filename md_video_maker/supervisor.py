@@ -57,6 +57,16 @@ def release_identity() -> dict:
             if path.is_file() and path.suffix in {'.py', '.md', '.txt', '.json'} and '__pycache__' not in path.parts:
                 if 'tests' not in path.relative_to(RELEASE_ROOT).parts:
                     files[str(path.relative_to(RELEASE_ROOT))] = digest_bytes(path.read_bytes())
+    # Promptless compositions execute this application and use its public
+    # backgrounds. Bind their source/configuration, not installed build caches.
+    for directory in ('remotion/src', 'remotion/public'):
+        for path in sorted((RELEASE_ROOT/directory).rglob('*')):
+            if path.is_file():
+                files[str(path.relative_to(RELEASE_ROOT))] = digest_bytes(path.read_bytes())
+    for name in ('package.json', 'package-lock.json', 'tsconfig.json'):
+        path = RELEASE_ROOT/'remotion'/name
+        if path.is_file():
+            files[str(path.relative_to(RELEASE_ROOT))] = digest_bytes(path.read_bytes())
     lock = RELEASE_ROOT/'renderer-requirements.lock'
     return {'release_root': str(RELEASE_ROOT), 'source_sha256': request_digest(files),
             'source_files': files, 'lock_sha256': digest_bytes(lock.read_bytes()),

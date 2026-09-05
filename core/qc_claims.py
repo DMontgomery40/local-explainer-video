@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
@@ -87,6 +88,17 @@ def _resolve_metric_in_data_pack(data_pack: dict[str, Any], metric: str, session
             else:
                 flat[k] = v
 
+    if session_index is not None:
+        # A requested session is an evidence boundary. Bare or substring
+        # matches can belong to a different session, even with equal values.
+        def normalized(key):
+            return re.sub(r"_session_", "_session", re.sub(r"[- .]+", "_", key.lower()))
+        requested = {normalized(f"{metric}_session{session_index}"), normalized(f"{metric}_{session_index}")}
+        for key, value in flat.items():
+            if normalized(key) in requested:
+                return value
+        return None
+
     # Exact match
     if metric in flat:
         return flat[metric]
@@ -137,11 +149,7 @@ def _validate_numeric_value(
         return ClaimResult(scene_id, "numeric_value", metric, False,
                            f"Claim has non-numeric value: {claim.get('value')}")
 
-    # Try session-specific lookup first, then bare metric
-    lookup_key = f"{metric}_session{session_index}" if session_index else metric
-    actual = _resolve_metric_in_data_pack(data_pack, lookup_key)
-    if actual is None and session_index:
-        actual = _resolve_metric_in_data_pack(data_pack, metric)
+    actual = _resolve_metric_in_data_pack(data_pack, metric, session_index=session_index)
     if actual is None:
         return ClaimResult(scene_id, "numeric_value", metric, False,
                            f"Metric '{metric}' not found in data pack")
