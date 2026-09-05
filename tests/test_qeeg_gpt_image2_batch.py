@@ -505,3 +505,30 @@ def test_static_batch_plan_changed_after_discovery_fails_before_backup(tmp_path,
     monkeypatch.setattr(mod,'ensure_backup_dir',lambda *a:pytest.fail('Backed up invalid motion candidate'))
     assert mod.main()==1
     assert json.loads((tmp_path/'results/results.json').read_text())['results'][0]['ok'] is False
+
+def test_new_batch_same_second_gets_distinct_action_directory(monkeypatch):
+    mod=_load_module();now=mod.utc_now();monkeypatch.setattr(mod,'utc_now',lambda:now)
+    assert mod._patient_results_dir('same-label') != mod._patient_results_dir('same-label')
+
+def test_batch_new_action_dispatches_same_prompt_while_retry_reuses_receipt(tmp_path,monkeypatch):
+    import re
+    from PIL import Image
+    from types import SimpleNamespace
+    from core import image_gen
+    mod=_load_module();project=tmp_path/'projects'/'ZZ_01-01-1900';project.mkdir(parents=True)
+    image=project/'image.png';Image.new('RGB',(32,18),'green').save(image)
+    _write_plan(project,{'meta':{},'scenes':[{'id':0,'visual_prompt':'Same prompt','image_path':str(image)}]})
+    candidate=mod.build_candidate('local-explainer-video',tmp_path,project)
+    monkeypatch.setattr(image_gen,'resolve_codex_runtime',lambda:{'path':'synthetic-codex'})
+    calls=[]
+    original_run=image_gen.subprocess.run
+    def command(*args,**kwargs):
+        if args[0][0] != "synthetic-codex":return original_run(*args,**kwargs)
+        calls.append(kwargs['input']);match=re.search(r'Copy the generated PNG to ([^\n]+)\.',kwargs['input'])
+        target=Path(match.group(1));target.parent.mkdir(parents=True,exist_ok=True);Image.new('RGB',(32,18),'red' if len(calls)==1 else 'blue').save(target)
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(image_gen.subprocess,'run',command)
+    mod.run_codex_refresh(candidate,run_dir=tmp_path/'run-a',model=None)
+    mod.run_codex_refresh(candidate,run_dir=tmp_path/'run-a',model=None);assert len(calls)==1
+    mod.run_codex_refresh(candidate,run_dir=tmp_path/'run-b',model=None);assert len(calls)==2
+    assert calls[0]!=calls[1], 'Native raw output belongs to its action'

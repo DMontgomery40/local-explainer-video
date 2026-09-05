@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from uuid import uuid4
 import os
 import re
 import shutil
@@ -521,7 +522,7 @@ def run_codex_refresh(candidate: ProjectCandidate, *, run_dir: Path, model: str 
                                          image_model="gpt-image-2", title=scene.get("title", ""),
                                          target_width=TARGET_WIDTH, target_height=TARGET_HEIGHT)
         _run_codex_exec_image(prompt=prompt, output_path=staged, runner_model=model,
-                              target_width=TARGET_WIDTH, target_height=TARGET_HEIGHT)
+                              target_width=TARGET_WIDTH, target_height=TARGET_HEIGHT, action_id="refresh")
         raw = staged.read_bytes()
         completed.append({"scene_id": scene.get("id", index), "target": str(target),
                           "staged": str(staged), "sha256": digest_bytes(raw), "size": len(raw)})
@@ -753,7 +754,7 @@ def _selected_patients(raw: str) -> set[str]:
 def _patient_results_dir(label: str) -> Path:
     stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
     safe_label = re.sub(r"[^A-Za-z0-9._-]+", "-", label.strip()) if label.strip() else stamp
-    return REPO_ROOT / "projects" / "queue_logs" / f"qeeg_gpt_image2_batch_{safe_label}_{stamp}"
+    return REPO_ROOT / "projects" / "queue_logs" / f"qeeg_gpt_image2_batch_{safe_label}_{stamp}_{uuid4().hex}"
 
 
 def main() -> int:

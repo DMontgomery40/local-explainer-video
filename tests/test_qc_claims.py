@@ -46,3 +46,21 @@ def test_threshold_rejects_unknown_predicates(predicate,value):
     from core.qc_claims import validate_claims
     result=validate_claims([{'type':'threshold','metric':'x','claim':predicate,'range':[10,20]}],{'facts':{'x':value}})
     assert not result.passed and result.errors
+
+@pytest.mark.parametrize('raw', [{},{'sceens':[]},{'scene_id':1},{'scenes':{}},{'scenes':[{}]},{'scenes':[{'claims':{}}]},{'claims':[4]},[None],None,5,'claims'])
+def test_malformed_claim_container_fails(tmp_path,raw):
+    import json
+    from core.qc_claims import validate_claims_file
+    path=tmp_path/'scene_claims.json';path.write_text(json.dumps(raw))
+    result=validate_claims_file(path,{'facts':{'x':4}})
+    assert not result.passed and result.errors
+
+@pytest.mark.parametrize('shape',['flat','scene','scenes'])
+def test_claim_container_valid_shapes_run_claims(tmp_path,shape):
+    import json
+    from core.qc_claims import validate_claims_file
+    claim={'type':'numeric_value','metric':'x','value':4}
+    raw=[claim] if shape=='flat' else {'scene_id':7,'claims':[claim]} if shape=='scene' else {'scenes':[{'scene_id':7,'claims':[claim]}]}
+    path=tmp_path/'claims.json';path.write_text(json.dumps(raw))
+    result=validate_claims_file(path,{'facts':{'x':4}})
+    assert result.passed and len(result.results)==1

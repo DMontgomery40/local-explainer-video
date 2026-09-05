@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from core.scene_modes import scene_is_cathode_motion
-from core.generation_receipts import paid_bytes, status_code, atomic_bytes, request_digest
+from core.generation_receipts import paid_bytes, status_code, atomic_bytes, request_digest, image_generation_action, current_asset_directory
 
 TARGET_WIDTH = 1664
 TARGET_HEIGHT = 928
@@ -249,6 +249,7 @@ def build_codex_image_prompt(
     )
 
 
+@image_generation_action
 def _run_codex_exec_image(
     *,
     prompt: str,
@@ -261,7 +262,7 @@ def _run_codex_exec_image(
     # This file belongs to this exact intended invocation, never a canonical PNG.
     identity = {"provider": "codex", "prompt": prompt, "runner_model": runner_model or _codex_runner_model(),
                 "width": target_width, "height": target_height}
-    raw_path = output_path.parent / ".codex-output" / request_digest(identity) / "raw.png"
+    raw_path = current_asset_directory() / "codex-output" / request_digest(identity) / "raw.png"
     raw_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     dispatch_prompt = prompt.replace(str(output_path), str(raw_path))
 
@@ -422,6 +423,7 @@ def _generate_image_openai(
     return output_path
 
 
+@image_generation_action
 def generate_image(
     prompt: str,
     output_path: str | Path,
@@ -798,6 +800,7 @@ def generate_scene_image(
             runner_model=str(kwargs.get("runner_model") or "").strip() or None,
             target_width=target_width,
             target_height=target_height,
+            action_id=kwargs.get("action_id"),
         )
         scene["image_path"] = str(result)
         return result

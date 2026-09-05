@@ -227,7 +227,7 @@ def test_old_canonical_png_cannot_satisfy_failed_codex_dispatch(monkeypatch,tmp_
     monkeypatch.setattr(image_gen.subprocess,'run',dispatch)
     for _ in range(2):
         with pytest.raises(UnknownDispatch):
-            image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8)
+            image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8,action_id='original-action')
     assert output.read_bytes()==old
     assert dispatch.call_count==1
 
@@ -276,11 +276,11 @@ def test_codex_completed_owned_raw_recovers_without_dispatch(monkeypatch,tmp_pat
         raise KeyboardInterrupt()
     monkeypatch.setattr(image_gen.subprocess,'run',dispatch)
     with pytest.raises(KeyboardInterrupt):
-        image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8)
+        image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8,action_id='original-action')
     call=Mock(side_effect=AssertionError('must not dispatch'))
     monkeypatch.setattr(image_gen.subprocess,'run',call)
     monkeypatch.setattr(image_gen,'_ensure_png',lambda p:p)
-    image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8)
+    image_gen._run_codex_exec_image(prompt=f'Write {output}',output_path=output,target_width=8,target_height=8,action_id='original-action')
     assert output.is_file()
     call.assert_not_called()
 
@@ -503,3 +503,18 @@ def test_recovery_never_uses_valid_canonical_as_substitute_for_corrupt_completed
     assert set(failure.value.failures) == {'image-0'}
     assert paid_calls == []
     assert canonical.read_bytes() == original
+
+@pytest.mark.parametrize('explicit', [False,True])
+def test_image_actions_fresh_but_explicit_retries_stable(monkeypatch,tmp_path,explicit):
+    from core.generation_receipts import paid_bytes,atomic_bytes
+    calls=[]
+    monkeypatch.setenv('LOCAL_EXPLAINER_IMAGE_PROVIDER','openai')
+    def provider(*,prompt,output_path,**kwargs):
+        def dispatch():calls.append(prompt);return str(len(calls)).encode()
+        atomic_bytes(output_path,paid_bytes({'prompt':prompt},dispatch,output_path=output_path));return output_path
+    monkeypatch.setattr(image_gen,'_generate_image_openai',provider)
+    scene={'id':0,'visual_prompt':'unchanged'}
+    for _ in range(2):image_gen.generate_scene_image(scene,tmp_path,**({'action_id':'action-one'} if explicit else {}))
+    assert len(calls)==(1 if explicit else 2)
+    image_gen.generate_scene_image(scene,tmp_path,action_id='action-two')
+    assert len(calls)==(2 if explicit else 3)

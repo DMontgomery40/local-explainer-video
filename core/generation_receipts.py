@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 import fcntl
 import hashlib
+from functools import wraps
+from uuid import uuid4
 import json
 import os
 from pathlib import Path
@@ -105,6 +107,25 @@ class AssetOperation:
         _current.reset(self._token)
         return self._lock.__exit__(*args)
 
+
+
+def image_generation_action(function):
+    """A new image call is a new action; callers retain action_id for retries."""
+    @wraps(function)
+    def wrapped(*args, action_id=None, **kwargs):
+        if _current.get() is not None:
+            return function(*args, **kwargs)
+        output = Path(kwargs.get('output_path') or args[1])
+        with AssetOperation(output.parent / '.generation', action_id or uuid4().hex, output.name):
+            return function(*args, **kwargs)
+    return wrapped
+
+
+def current_asset_directory() -> Path:
+    operation = _current.get()
+    if operation is None:
+        raise ValueError('Image dispatch requires its original action context')
+    return operation.directory
 
 def status_code(exc: Exception):
     code = getattr(exc, 'status_code', None)

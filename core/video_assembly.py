@@ -1,6 +1,9 @@
 """Video assembly using MoviePy (v1) and ffmpeg (v2)."""
 
 import platform
+import json
+import math
+import tempfile
 import shutil
 import subprocess
 from pathlib import Path
@@ -408,23 +411,35 @@ def assemble_v2_video(
     name = output_filename or f"{project_dir.name}.mp4"
     output_path = project_dir / name
 
-    # Archive existing if present
-    _archive_existing_video(output_path, project_dir)
-
-    cmd = [
-        _FFMPEG, "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_file),
-        *encoder_args,
-        "-c:a", "aac", "-b:a", "128k",
-        "-movflags", "+faststart",
-        str(output_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if result.returncode != 0:
-        raise RuntimeError(f"Concat failed: {result.stderr[-500:]}")
-
-    total_dur = _get_media_duration(output_path)
-    size_mb = output_path.stat().st_size / (1024 * 1024)
+    with tempfile.TemporaryDirectory(prefix=".v2-concat-", dir=output_path.parent) as staging:
+        staged = Path(staging) / "final.mp4"
+        cmd = [
+            _FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+            *encoder_args, "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(staged),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise RuntimeError(f"Concat failed: {result.stderr[-500:]}")
+        if not staged.is_file() or staged.stat().st_size == 0:
+            raise RuntimeError("Concat produced no video")
+        probe = subprocess.run([_FFPROBE, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(staged)],
+                               capture_output=True, text=True, timeout=30)
+        if probe.returncode != 0:
+            raise RuntimeError("Concat output failed media validation")
+        media = json.loads(probe.stdout)
+        total_dur = float(media.get("format", {}).get("duration", 0))
+        streams = media.get("streams", [])
+        if (not math.isfinite(total_dur) or total_dur <= 0
+                or not any(s.get("codec_type") == "video" and s.get("width", 0) > 0 and s.get("height", 0) > 0 for s in streams)
+                or not any(s.get("codec_type") == "audio" for s in streams)):
+            raise ValueError("Concat requires video, narration audio and positive duration")
+        size_mb = staged.stat().st_size / (1024 * 1024)
+        archived = _archive_existing_video(output_path, project_dir)
+        try:
+            staged.replace(output_path)
+        except BaseException:
+            if archived and not output_path.exists():
+                archived.replace(output_path)
+            raise
     print(f"  Final: {output_path.name} ({total_dur:.1f}s, {size_mb:.1f}MB, {encoder_name})")
     return output_path

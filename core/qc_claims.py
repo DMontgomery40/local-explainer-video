@@ -348,21 +348,36 @@ def validate_claims_file(
     data_pack: dict[str, Any],
 ) -> ClaimsQCResult:
     """Load scene_claims.json and validate against data pack."""
-    raw = json.loads(claims_path.read_text(encoding="utf-8"))
+    def invalid():
+        return ClaimsQCResult(passed=False, errors=["Malformed scene claims container"])
 
-    # Accept either a list of claims or a dict with per-scene claims
+    try:
+        raw = json.loads(claims_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return invalid()
     all_claims: list[dict[str, Any]] = []
     if isinstance(raw, list):
-        # Flat list of claims
+        if not all(isinstance(claim, dict) for claim in raw):
+            return invalid()
         all_claims = raw
     elif isinstance(raw, dict):
-        # Per-scene format: {"scenes": [{"scene_id": N, "claims": [...]}]}
-        for scene_block in raw.get("scenes", [raw]):
-            scene_id = scene_block.get("scene_id", "?")
-            for claim in scene_block.get("claims", []):
-                claim.setdefault("scene_id", scene_id)
-                all_claims.append(claim)
-
+        if "scenes" in raw:
+            blocks = raw["scenes"]
+        elif "claims" in raw:
+            blocks = [raw]
+        else:
+            return invalid()
+        if not isinstance(blocks, list):
+            return invalid()
+        for block in blocks:
+            if not isinstance(block, dict) or not isinstance(block.get("claims"), list):
+                return invalid()
+            for claim in block["claims"]:
+                if not isinstance(claim, dict):
+                    return invalid()
+                all_claims.append({"scene_id": block.get("scene_id", "?"), **claim})
+    else:
+        return invalid()
     return validate_claims(all_claims, data_pack)
 
 

@@ -148,9 +148,11 @@ def test_explicit_qwen_uses_original_provider_receipt_and_never_codex_or_openai(
     monkeypatch.setattr(image_gen, '_run_codex_exec_image', lambda **k: (_ for _ in ()).throw(AssertionError('Qwen dispatched through Codex')))
     monkeypatch.setattr(image_gen, '_generate_image_openai', lambda **k: (_ for _ in ()).throw(AssertionError('Qwen dispatched through OpenAI')))
     for prompt in ['original', 'original', 'changed']:
-        path = image_gen.generate_image(prompt, tmp_path/'image.png', model='qwen/qwen-image-2512', target_width=64, target_height=36)
+        path = image_gen.generate_image(prompt, tmp_path/'image.png', model='qwen/qwen-image-2512', target_width=64, target_height=36, action_id=prompt)
         assert Image.open(path).size == (64, 36)
     assert len(calls) == 2
+    image_gen.generate_image('original', tmp_path/'image.png', model='qwen/qwen-image-2512', target_width=64, target_height=36, action_id='new-authorized-action')
+    assert len(calls) == 3
     assert all(model == 'qwen/qwen-image-2512' and inputs['output_format'] == 'png' for model, inputs in calls)
 
 
@@ -171,8 +173,8 @@ def test_qwen_acknowledgement_survives_output_download_failure(monkeypatch, tmp_
         return SimpleNamespace(content=b'not an image' if len(downloads)==1 else good.getvalue(),raise_for_status=lambda:None)
     monkeypatch.setattr(requests,'get',get)
     target=tmp_path/'original.png';Image.new('RGB',(32,18),'red').save(target);original=target.read_bytes()
-    with pytest.raises(Exception): image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18)
+    with pytest.raises(Exception): image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18,action_id='original-action')
     assert target.read_bytes()==original
-    image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18)
+    image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18,action_id='original-action')
     assert len(calls)==1 and len(downloads)==2
     assert target.read_bytes()!=original
