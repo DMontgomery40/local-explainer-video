@@ -55,7 +55,8 @@ def test_generate_scene_image_falls_back_to_remotion_for_promptless_scene(monkey
         captured["props"] = props
         captured["output_path"] = output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(b"png")
+        from PIL import Image
+        Image.new('RGB', (1664, 928), 'navy').save(output_path)
         return output_path
 
     monkeypatch.setattr("core.image_gen._render_scene_still", fake_render_scene_still)
@@ -67,6 +68,27 @@ def test_generate_scene_image_falls_back_to_remotion_for_promptless_scene(monkey
     assert captured["props"] == {"headline": "Fallback Title", "body": ""}
     assert result == tmp_path / "images" / "scene_001.png"
     assert scene["image_path"] == str(result)
+
+
+@pytest.mark.parametrize('dimensions', [(90, 160), (160, 90), (100, 100)])
+def test_promptless_still_preserves_aspect_ratio(monkeypatch, tmp_path, dimensions):
+    from PIL import Image, ImageDraw
+    def render(**kwargs):
+        source = Image.new('RGB', (160, 90), 'navy')
+        ImageDraw.Draw(source).rectangle((60, 25, 99, 64), fill='red')
+        source.save(kwargs['output_path'])
+        return kwargs['output_path']
+    monkeypatch.setattr('core.image_gen._render_scene_still', render)
+    result = generate_scene_image({'id': 0, 'visual_prompt': ''}, tmp_path,
+                                  target_width=dimensions[0], target_height=dimensions[1])
+    with Image.open(result) as image:
+        assert image.size == dimensions
+        # The central square stays square across portrait, landscape and square output.
+        cx, cy = dimensions[0] // 2, dimensions[1] // 2
+        red = lambda pixel: pixel[0] > 200 and pixel[1] < 30 and pixel[2] < 30
+        width = sum(red(image.getpixel((x, cy))) for x in range(dimensions[0]))
+        height = sum(red(image.getpixel((cx, y))) for y in range(dimensions[1]))
+        assert width > 0 and abs(width - height) <= 2
 
 
 def test_generate_scene_image_rejects_motion_scene(tmp_path: Path):

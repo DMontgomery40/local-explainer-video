@@ -6,6 +6,7 @@ import json
 import math
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -221,14 +222,10 @@ def assemble_mixed_video(
 ) -> Path:
     project_dir = Path(project_dir)
     output_path = project_dir / output_filename
-    archived = _archive_existing_video(output_path, project_dir)
-    if archived:
-        print(f"Archived previous video to: {archived}")
-
-    segment_dir = project_dir / "_mixed_segments"
-    if segment_dir.exists():
-        shutil.rmtree(segment_dir)
-    segment_dir.mkdir(parents=True, exist_ok=True)
+    if not scenes:
+        raise ValueError("Video assembly requires scenes")
+    segment_dir = Path(tempfile.mkdtemp(prefix=".mixed-", dir=output_path.parent))
+    staged_output = segment_dir / "final.mp4"
 
     segment_paths: list[Path] = []
     try:
@@ -244,7 +241,7 @@ def assemble_mixed_video(
                 _make_still_segment(scene, project_dir, audio_path, segment_path, seconds, target_width, target_height)
             segment_paths.append(segment_path)
 
-        list_path = project_dir / "_mixed_segments.txt"
+        list_path = segment_dir / "segments.txt"
         with list_path.open("w", encoding="utf-8") as handle:
             for segment_path in segment_paths:
                 handle.write(f"file '{segment_path}'\n")
@@ -267,11 +264,30 @@ def assemble_mixed_video(
                 "0",
                 "-movflags",
                 "+faststart+negative_cts_offsets",
-                str(output_path),
+                str(staged_output),
             ],
             check=True,
         )
-        list_path.unlink(missing_ok=True)
+        if not staged_output.is_file() or not staged_output.stat().st_size:
+            raise ValueError("Mixed assembly produced no video")
+        probe = subprocess.run(
+            [FFPROBE, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(staged_output)],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        media = json.loads(probe.stdout)
+        seconds = float(media.get("format", {}).get("duration", 0))
+        streams = media.get("streams", [])
+        if (not math.isfinite(seconds) or seconds <= 0
+                or not any(s.get("codec_type") == "video" and s.get("width", 0) > 0 and s.get("height", 0) > 0 for s in streams)
+                or not any(s.get("codec_type") == "audio" for s in streams)):
+            raise ValueError("Mixed assembly requires video, narration audio and positive duration")
+        archived = _archive_existing_video(output_path, project_dir)
+        try:
+            staged_output.replace(output_path)
+        except BaseException:
+            if archived and not output_path.exists():
+                archived.replace(output_path)
+            raise
     finally:
         shutil.rmtree(segment_dir, ignore_errors=True)
 

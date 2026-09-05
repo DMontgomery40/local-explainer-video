@@ -96,12 +96,8 @@ You need at least one of OpenAI or Anthropic for the director agent.
 
 If you want the direct Claude API path to have access to your full Anthropic-hosted Remotion custom skill, set `REMOTION_SKILL_ID` to the remote `skill_...` id from Anthropic. A local Codex/Claude skill install helps us follow the right API pattern, but the API call itself still needs the remote Anthropic custom skill id.
 
-To list existing custom skills or upload a local skill directory and print the resulting `skill_...` id:
-
-```bash
-python3 scripts/anthropic_skills.py list
-python3 scripts/anthropic_skills.py create .claude/skills/remotion-best-practices --display-title "Remotion Best Practices"
-```
+Provision the custom skill in your Anthropic account, then set its returned identifier in
+`REMOTION_SKILL_ID`. The remote skill and its upload tooling are managed separately from this repository.
 For the separate local Claude CLI storyboard lane, `CLAUDE_LOCAL_REMOTION_USE_API_KEY` defaults to `false`, so the helper
 prefers Claude Code subscription auth and strips `ANTHROPIC_API_KEY` unless you explicitly opt back into API-key billing.
 

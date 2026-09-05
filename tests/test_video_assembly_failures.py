@@ -116,3 +116,33 @@ def test_mixed_clip_freezes_with_bounded_tail(monkeypatch, tmp_path, clip, start
         with pytest.raises(ValueError):
             mixed._make_video_segment(scene,tmp_path,tmp_path/'audio.wav',tmp_path/'out.mp4',narration)
         assert not commands
+
+
+@pytest.mark.parametrize('failure', ['asset', 'segment', 'concat', 'empty', 'probe', 'no-audio', 'bad-duration', 'success'])
+def test_mixed_failure_preserves_canonical(tmp_path, monkeypatch, failure):
+    from md_video_maker import mixed_video_assembly as mixed
+    old = tmp_path / 'out.mp4'; old.write_bytes(b'original')
+    audio = tmp_path / 'audio.wav'
+    if failure != 'asset': audio.write_bytes(b'audio')
+    monkeypatch.setattr(mixed, 'duration', lambda _: 1)
+    def segment(*args):
+        if failure == 'segment': raise RuntimeError('segment failure')
+        args[3].write_bytes(b'segment')
+    monkeypatch.setattr(mixed, '_make_still_segment', segment)
+    def run(cmd, **kwargs):
+        if '-show_streams' in cmd:
+            if failure == 'probe': raise mixed.subprocess.CalledProcessError(1, cmd)
+            return SimpleNamespace(stdout=json.dumps({'format': {'duration': 'nan' if failure == 'bad-duration' else '1'},
+                'streams': [{'codec_type': 'video', 'width': 64, 'height': 36}] + ([] if failure == 'no-audio' else [{'codec_type': 'audio'}])}))
+        Path(cmd[-1]).write_bytes(b'' if failure == 'empty' else b'new')
+        if failure == 'concat': raise mixed.subprocess.CalledProcessError(1, cmd)
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(mixed.subprocess, 'run', run)
+    call = lambda: mixed.assemble_mixed_video([{'audio_path': audio.name}], tmp_path, 'out.mp4')
+    if failure == 'success':
+        assert call() == old and old.read_bytes() == b'new'
+        assert any(p.read_bytes() == b'original' for p in (tmp_path / '.v1-videos').glob('*'))
+    else:
+        with pytest.raises((OSError, RuntimeError, ValueError, mixed.subprocess.CalledProcessError)): call()
+        assert old.read_bytes() == b'original'
+    assert not list(tmp_path.glob('.mixed-*'))

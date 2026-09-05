@@ -819,5 +819,6 @@ def generate_scene_image(
         props=props,
         output_path=output_path,
     )
+    _normalize_image_to_target(result, target_width, target_height)
     scene["image_path"] = str(result)
     return result

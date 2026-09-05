@@ -7,10 +7,14 @@ Cost: ~$0.003 per 30s of audio.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 from typing import Any
 
-from .rate_limiter import image_limiter
+from .generation_receipts import (
+    AssetOperation, atomic_json, current_asset_directory, digest_bytes,
+    paid_bytes, request_digest,
+)
 
 
 WHISPER_MODEL = "vaibhavs10/incredibly-fast-whisper:3ab86df6c8f54c11309d4d1f930ac292bad43ace52d10c80d87eb258b3c9f79c"
@@ -50,19 +54,39 @@ def get_word_timestamps(
     """
     import replicate
 
-    def _call_whisper():
-        with open(audio_path, "rb") as f:
-            return replicate.run(
-                model,
-                input={
-                    "audio": f,
-                    "task": task,
-                    "timestamp": "word",
-                    "batch_size": batch_size,
-                },
-            )
+    audio_path = Path(audio_path)
+    request = {"provider": "replicate", "model": model,
+               "audio_sha256": digest_bytes(audio_path.read_bytes()),
+               "task": task, "timestamp": "word", "batch_size": batch_size}
+    # Timing is keyed to the audio bytes and inference settings across both pipelines.
+    with AssetOperation(audio_path.parent / '.generation', request_digest(request),
+                        audio_path.name + '.whisper'):
+        prediction_path = current_asset_directory() / 'prediction.json'
 
-    output = image_limiter.call_with_retry(_call_whisper)
+        def collect(prediction):
+            if prediction.status not in {'succeeded', 'failed', 'canceled'}:
+                prediction.wait()
+            if prediction.status != 'succeeded':
+                raise RuntimeError(f'Whisper prediction {prediction.id} {prediction.status}')
+            if not isinstance(prediction.output, dict):
+                raise ValueError('Whisper prediction returned invalid timing data')
+            return json.dumps(prediction.output).encode()
+
+        def dispatch():
+            with audio_path.open('rb') as handle:
+                inputs = {'audio': handle, 'task': task, 'timestamp': 'word', 'batch_size': batch_size}
+                selector = {'version': model.split(':', 1)[1]} if ':' in model else {'model': model}
+                prediction = replicate.predictions.create(**selector, input=inputs)
+            # Save before any polling. A lost create response remains unknown, never replayed.
+            atomic_json(prediction_path, {'id': prediction.id})
+            return collect(prediction)
+
+        def recover():
+            if not prediction_path.exists():
+                return None
+            return collect(replicate.predictions.get(json.loads(prediction_path.read_text())['id']))
+
+        output = json.loads(paid_bytes(request, dispatch, key='whisper', recover=recover))
 
     return _parse_whisper_output(output)
 
