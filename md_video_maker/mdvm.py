@@ -35,7 +35,8 @@ sys.path.insert(0, str(LOCAL_EXPLAINER_ROOT))
 from core.generation_receipts import (AssetOperation, AssetFailures, ReceiptConflict, UnknownDispatch, atomic_bytes, atomic_json, digest_bytes, exclusive_lock)
 from core.image_gen import generate_scene_image, codex_runtime_scope  # type: ignore  # noqa: E402
 from core.video_assembly import assemble_video  # type: ignore  # noqa: E402
-from core.voice_gen import generate_scene_audio  # type: ignore  # noqa: E402
+from core.voice_gen import (generate_scene_audio, DEFAULT_OPENROUTER_MODEL, DEFAULT_OPENROUTER_VOICE,
+                            DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, DEFAULT_ELEVENLABS_VOICE)  # noqa: E402
 
 from md_video_maker.mixed_video_assembly import assemble_mixed_video  # noqa: E402
 
@@ -535,9 +536,11 @@ def _render_project(project_dir: Path, *, force_images: bool, force_audio: bool,
 
     meta = plan.get("meta", {})
     tts_provider = str(meta.get("tts_provider", "elevenlabs"))
-    voice = str(meta.get("voice", "Antoni"))
+    default_voice = {"openrouter": DEFAULT_OPENROUTER_VOICE, "openai": DEFAULT_OPENAI_VOICE}.get(tts_provider, DEFAULT_ELEVENLABS_VOICE)
+    voice = str(meta.get("voice") or default_voice)
     audio_speed = float(meta.get("audio_speed", 1.0))
-    tts_model = str(meta.get("tts_model", "tts-1-hd")).strip()
+    default_model = DEFAULT_OPENROUTER_MODEL if tts_provider == "openrouter" else DEFAULT_OPENAI_MODEL
+    tts_model = str(meta.get("tts_model") or default_model).strip() or default_model
     voice_instructions = str(meta.get("voice_instructions", "")).strip()
     elevenlabs_model_id = str(meta.get("elevenlabs_model_id", "")).strip() or "eleven_multilingual_v2"
     elevenlabs_text_normalization = str(

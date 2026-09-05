@@ -42,3 +42,29 @@ def test_openrouter_setup_matches_generation_gate(monkeypatch, key, tmp_path):
         with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
             app._tts_kwargs_from_state()
     sys.modules.pop("app", None)
+
+
+@pytest.mark.parametrize('provider,voice', [('openai','onyx'), ('openrouter','Charon'), ('elevenlabs','Antoni')])
+def test_actual_qc_configuration_uses_selected_provider_voice(monkeypatch, tmp_path, provider, voice):
+    import dotenv
+    monkeypatch.setattr(dotenv, 'load_dotenv', lambda *a, **k: None)
+    monkeypatch.setenv('OPENROUTER_API_KEY','synthetic-key')
+    st = MagicMock(); st.session_state = State()
+    st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
+    st.selectbox.side_effect = lambda label, options, index=0, **k: options[index]
+    st.text_input.side_effect = lambda label, value='', **k: value
+    st.number_input.side_effect = lambda *a, **k: k['value']
+    st.checkbox.return_value = False
+    st.button.side_effect = lambda label, **k: label == 'Run QC + Publish'
+    monkeypatch.setitem(sys.modules, 'streamlit', st); sys.modules.pop('app', None)
+    app = importlib.import_module('app'); app.init_session_state()
+    project = tmp_path/'ZZ_01-01-1900'; project.mkdir()
+    plan = {'scenes': []}
+    st.session_state.update(plan=plan, project_dir=project, tts_provider=provider, tts_voice='Charon')
+    monkeypatch.setattr(app, 'get_video_duration', lambda *a: 0.0)
+    captured=[]
+    monkeypatch.setattr(app, 'qc_and_publish_project', lambda **k: (captured.append(k['config']) or plan, {}))
+    monkeypatch.setattr(app, 'save_plan', lambda *a: None)
+    app.render_step_3()
+    assert captured and captured[0].tts_voice == voice
+    sys.modules.pop('app', None)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -153,16 +154,21 @@ def _make_video_segment(
     if not video_path.exists():
         raise FileNotFoundError(f"Missing scene video: {video_path}")
 
+    start = float(scene.get("video_start_seconds") or 0)
+    clip_seconds = duration(video_path)
+    if not all(math.isfinite(value) for value in (start, clip_seconds, seconds)) or start < 0 or seconds <= 0 or clip_seconds <= start:
+        raise ValueError("Scene video requires a finite, positive available duration and valid start time")
+    freeze_seconds = max(0.0, seconds - (clip_seconds - start))
+    if freeze_seconds > 5.0:
+        raise ValueError("Scene video needs longer footage: last-frame freeze would exceed five seconds")
+
     cmd = [
         FFMPEG,
         "-y",
         "-loglevel",
         "error",
-        "-stream_loop",
-        "-1",
     ]
-    start = scene.get("video_start_seconds")
-    if start not in (None, ""):
+    if start:
         cmd.extend(["-ss", f"{float(start):.3f}"])
     cmd.extend(
         [
@@ -173,7 +179,7 @@ def _make_video_segment(
             "-t",
             f"{seconds:.3f}",
             "-vf",
-            _filter(target_width, target_height),
+            _filter(target_width, target_height) + f",tpad=stop_mode=clone:stop_duration={freeze_seconds:.6f}",
             "-map",
             "0:v:0",
             "-map",

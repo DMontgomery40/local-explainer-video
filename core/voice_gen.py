@@ -8,7 +8,7 @@ from typing import Literal
 
 import requests
 
-from core.generation_receipts import paid_bytes, atomic_bytes
+from core.generation_receipts import paid_bytes, atomic_bytes, image_generation_action
 from core.rate_limiter import elevenlabs_limiter, openai_limiter, image_limiter
 
 # ElevenLabs voices - curated selection for narration
@@ -550,6 +550,7 @@ def generate_scene_audio(
     openai_model: str = DEFAULT_OPENAI_MODEL,
     openai_instructions: str = DEFAULT_OPENAI_INSTRUCTIONS,
     openrouter_model: str = DEFAULT_OPENROUTER_MODEL,
+    action_id: str | None = None,
 ) -> Path:
     """
     Generate audio for a specific scene.
@@ -562,6 +563,7 @@ def generate_scene_audio(
         speed: Speed multiplier (provider-dependent)
         exaggeration: Emotion intensity 0.25-2.0 (Chatterbox only)
         elevenlabs_*: ElevenLabs settings (used when tts_provider=="elevenlabs")
+        action_id: Retain for retries of one scene action; omit for a new generation.
 
     Returns:
         Path to the generated audio
@@ -571,7 +573,9 @@ def generate_scene_audio(
 
     output_path = project_dir / "audio" / f"scene_{scene_id:03d}.wav"
 
-    return generate_audio(
+    # The same receipt scope serves image and audio actions and preserves an
+    # enclosing render attempt. Low-level pipeline calls retain request receipts.
+    return image_generation_action(generate_audio)(
         narration,
         output_path,
         voice=voice,
@@ -587,4 +591,5 @@ def generate_scene_audio(
         openai_model=openai_model,
         openai_instructions=openai_instructions,
         openrouter_model=openrouter_model,
+        action_id=action_id,
     )

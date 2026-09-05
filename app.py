@@ -1400,7 +1400,7 @@ def render_step_3():
                     "elevenlabs_use_speaker_boost": bool(st.session_state.tts_elevenlabs_use_speaker_boost),
                 }
             else:
-                qc_tts_voice = st.session_state.tts_voice
+                qc_tts_voice = _tts_kwargs_from_state()["voice"]
                 qc_tts_speed = float(st.session_state.tts_speed)
                 qc_elevenlabs = {}
 

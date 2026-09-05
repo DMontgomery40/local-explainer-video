@@ -97,3 +97,22 @@ def test_v2_requires_fresh_complete_mux_output(tmp_path, monkeypatch, position, 
     assert not (tmp_path / '.v1-videos').exists()
     assert all(output.parent != stale and not output.exists() for output in outputs)
     assert all(path.read_bytes() == b'stale' for path in stale.iterdir())
+@pytest.mark.parametrize('clip,start,narration,allowed', [
+    (10,0,12,True), (10,4,11,True), (10,4,11.1,False), (10,10,1,False),
+    (10,-1,1,False), (float('nan'),0,1,False), (10,0,float('inf'),False)])
+def test_mixed_clip_freezes_with_bounded_tail(monkeypatch, tmp_path, clip, start, narration, allowed):
+    from md_video_maker import mixed_video_assembly as mixed
+    (tmp_path/'clip.mp4').write_bytes(b'fixture')
+    monkeypatch.setattr(mixed, 'duration', lambda _: clip)
+    commands=[]
+    monkeypatch.setattr(mixed.subprocess, 'run', lambda cmd, **kw: commands.append(cmd))
+    scene={'video_source_path':'clip.mp4', 'video_start_seconds':start}
+    if allowed:
+        mixed._make_video_segment(scene,tmp_path,tmp_path/'audio.wav',tmp_path/'out.mp4',narration)
+        cmd=commands[0]
+        assert '-stream_loop' not in cmd
+        assert 'tpad=stop_mode=clone' in cmd[cmd.index('-vf')+1]
+    else:
+        with pytest.raises(ValueError):
+            mixed._make_video_segment(scene,tmp_path,tmp_path/'audio.wav',tmp_path/'out.mp4',narration)
+        assert not commands

@@ -518,3 +518,43 @@ def test_image_actions_fresh_but_explicit_retries_stable(monkeypatch,tmp_path,ex
     assert len(calls)==(1 if explicit else 2)
     image_gen.generate_scene_image(scene,tmp_path,action_id='action-two')
     assert len(calls)==(2 if explicit else 3)
+
+
+@pytest.mark.parametrize('provider', ['openrouter', 'openai', 'elevenlabs', 'chatterbox', 'elevenlabs_replicate'])
+@pytest.mark.parametrize('mode', ['fresh', 'retry', 'owned'])
+def test_audio_actions_distinguish_new_work_from_recovery(monkeypatch, tmp_path, provider, mode):
+    from core import voice_gen
+    from core.generation_receipts import paid_bytes, atomic_bytes, AssetOperation
+    from contextlib import nullcontext
+    calls = []
+    def synth(text, output_path, *args, **kwargs):
+        def dispatch():
+            calls.append(text)
+            return str(len(calls)).encode()
+        atomic_bytes(output_path, paid_bytes({'text': text}, dispatch, output_path=output_path))
+        return output_path
+    monkeypatch.setattr(voice_gen, '_generate_with_' + provider, synth)
+    scene = {'id': 0, 'narration': 'same text'}
+    for _ in range(2):
+        with AssetOperation(tmp_path/'operations', 'same-attempt', 'audio') if mode == 'owned' else nullcontext():
+            voice_gen.generate_scene_audio(scene, tmp_path, tts_provider=provider,
+                **({'action_id': 'same-action'} if mode == 'retry' else {}))
+    assert len(calls) == (2 if mode == 'fresh' else 1)
+
+
+@pytest.mark.parametrize('provider,model,voice', [
+    ('openrouter', 'google/gemini-3.1-flash-tts-preview', 'Charon'),
+    ('openai', 'tts-1-hd', 'onyx'), ('elevenlabs', 'tts-1-hd', 'Antoni')])
+def test_render_provider_defaults_reach_audio_dispatch(synthetic_render, monkeypatch, provider, model, voice):
+    mdvm, project, calls = synthetic_render
+    plan = json.loads((project/'plan.json').read_text())
+    plan['meta']['tts_provider'] = provider
+    (project/'plan.json').write_text(json.dumps(plan))
+    original = mdvm.generate_scene_audio
+    seen = []
+    def audio(*args, **kwargs):
+        seen.append(kwargs)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(mdvm, 'generate_scene_audio', audio)
+    mdvm.render_project(project, attempt_id='defaults')
+    assert seen and all(k['openrouter_model' if provider == 'openrouter' else 'openai_model'] == model and k['voice'] == voice for k in seen)
