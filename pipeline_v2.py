@@ -218,6 +218,7 @@ def run_pipeline(
         clips_dir = project_dir / "remotion_renders"
         clips_dir.mkdir(parents=True, exist_ok=True)
 
+        failures = {}
         for i, scene in enumerate(scenes):
             composition = scene.get("composition", {})
             family = composition.get("family", "narration_slide")
@@ -248,9 +249,14 @@ def run_pipeline(
                 scene["clip_path"] = str(clip_path)
                 _log(f"[done] {clip_path.name}")
             except Exception as exc:
+                scene.pop("clip_path", None)
+                failures[str(i)] = exc
                 _log(f"[FAIL] scene_{i:03d}: {exc}")
+            _save_plan(project_dir, plan)
 
-        _save_plan(project_dir, plan)
+        if failures:
+            from core.generation_receipts import AssetFailures
+            raise AssetFailures(failures)
     else:
         _log("Skipping rendering (--skip-render)")
 
@@ -266,9 +272,8 @@ def run_pipeline(
     ]
     _log(f"Ready scenes: {len(ready_scenes)} / {len(scenes)}")
 
-    if not ready_scenes:
-        _log("No scenes ready for assembly. Run the agent to write HTML scenes first.")
-        return project_dir / "scene_timing.json"
+    if len(ready_scenes) != len(scenes) or not scenes:
+        raise RuntimeError("Every planned scene needs its current clip and audio before assembly")
 
     output_path = assemble_v2_video(ready_scenes, project_dir, fps=fps)
 

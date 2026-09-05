@@ -17,6 +17,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
+from .generation_receipts import paid_bytes, request_digest, digest_bytes, atomic_json, AssetFailures
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FPS = 30
@@ -76,10 +77,6 @@ def run_pipeline(
             if not narration:
                 continue
             audio_path = audio_dir / f"scene_{i:03d}.wav"
-            if audio_path.exists() and audio_path.stat().st_size > 0:
-                _log(f"[{i:2d}] exists")
-                scene["audio_path"] = str(audio_path)
-                continue
             _log(f"[{i:2d}] generating ({len(narration.split())}w)...")
             generate_audio(text=narration, output_path=audio_path,
                            tts_provider=tts_provider, voice=voice, speed=speed)
@@ -116,11 +113,7 @@ def run_pipeline(
     # ── Pass 2: Generate scene_code with timing data ──
     _phase("Pass 2: Generate scene visuals with cue point timing")
 
-    has_scene_code = any(s.get("scene_code", "").strip() for s in scenes)
-    if has_scene_code:
-        _log("Scenes already have scene_code — skipping Pass 2")
-    else:
-        _generate_scene_code_with_timing(scenes, plan, plan_path)
+    _generate_scene_code_with_timing(scenes, plan, plan_path)
 
     # ── Render ──
     _phase("Render: Remotion dynamic scenes")
@@ -129,10 +122,12 @@ def run_pipeline(
     clips_dir = project_dir / "remotion_renders"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
+    failures = {}
     for i, scene in enumerate(scenes):
         code = scene.get("scene_code", "").strip()
         if not code:
-            _log(f"[{i:2d}] SKIP — no scene_code")
+            failures[str(i)] = ValueError("Required scene has no timing code")
+            scene.pop("clip_path", None)
             continue
         audio_p = Path(scene["audio_path"]) if scene.get("audio_path") else None
         frames = duration_frames(audio_p)
@@ -142,9 +137,14 @@ def run_pipeline(
             render_dynamic_scene(scene_code=code, output_path=clip, duration_in_frames=frames)
             scene["clip_path"] = str(clip)
         except Exception as e:
+            scene.pop("clip_path", None)
+            failures[str(i)] = e
             _log(f"[{i:2d}] FAIL: {e}")
+        atomic_json(plan_path, plan)
 
-    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False))
+    atomic_json(plan_path, plan)
+    if failures:
+        raise AssetFailures(failures)
 
     # ── Assemble ──
     _phase("Assemble: Mux clips + audio, concatenate")
@@ -213,7 +213,6 @@ def _generate_scene_code_with_timing(
     """Second-pass: generate scene_code for each scene with cue point timing."""
     import anthropic
 
-    client = anthropic.Anthropic()
     system = _build_scene_code_prompt()
 
     for i, scene in enumerate(scenes):
@@ -221,6 +220,11 @@ def _generate_scene_code_with_timing(
         audio_duration = scene.get("audio_duration", 5.0)
         total_frames = int(audio_duration * FPS)
 
+        previous = scene.get("timing_code_receipt") or {}
+        current_code = scene.get("scene_code", "")
+        input_code = (previous.get("input_code", "")
+                      if previous.get("output_sha256") == digest_bytes(current_code.encode())
+                      else current_code)
         user_msg = json.dumps({
             "scene_id": i,
             "title": scene.get("title", ""),
@@ -230,30 +234,39 @@ def _generate_scene_code_with_timing(
             "total_frames": total_frames,
             "fps": FPS,
             "cue_points": cue_points,
+            "preliminary_scene_code": input_code,
         }, indent=2, ensure_ascii=False)
 
         _log(f"[{i:2d}] generating scene_code ({len(cue_points)} cues, {total_frames}fr)...")
 
-        text = ""
-        with client.messages.stream(
-            model="claude-sonnet-4-6",
-            max_tokens=8192,
-            system=system,
-            messages=[{"role": "user", "content": user_msg}],
-        ) as stream:
-            for event in stream:
-                if hasattr(event, "type") and event.type == "content_block_delta":
-                    if hasattr(event.delta, "text"):
-                        text += event.delta.text
+        request = {"model": "claude-sonnet-4-6", "max_tokens": 8192,
+                   "system": system, "messages": [{"role": "user", "content": user_msg}]}
+        fingerprint = request_digest(request)
+        if (previous.get("request_sha256") == fingerprint
+                and previous.get("output_sha256") == digest_bytes(current_code.encode())
+                and current_code.strip()):
+            continue
 
-        code = _extract_code(text)
-        if code:
-            scene["scene_code"] = code
-            _log(f"[{i:2d}] OK ({len(code)} chars)")
-        else:
-            _log(f"[{i:2d}] WARN: no code extracted")
+        def dispatch():
+            client = anthropic.Anthropic()
+            text = ""
+            with client.messages.stream(**request) as stream:
+                for event in stream:
+                    if getattr(event, "type", None) == "content_block_delta":
+                        text += getattr(event.delta, "text", "")
+            return text.encode()
 
-    plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False))
+        raw = paid_bytes(request, dispatch,
+                         output_path=plan_path.parent / "timing_code" / f"scene_{i:03d}.tsx")
+        code = _extract_code(raw.decode())
+        if not code.strip():
+            raise ValueError(f"Scene {i} timing pass returned no code")
+        scene["scene_code"] = code
+        scene["timing_code_receipt"] = {"request_sha256": fingerprint,
+                                        "output_sha256": digest_bytes(code.encode()),
+                                        "input_code": input_code}
+        atomic_json(plan_path, plan)
+        _log(f"[{i:2d}] OK ({len(code)} chars)")
 
 
 def _extract_code(text: str) -> str:

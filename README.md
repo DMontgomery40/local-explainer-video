@@ -69,6 +69,7 @@ sudo apt-get install python3.10 ffmpeg espeak-ng
 
 Create a `.env` (or export env vars) and add your keys:
 ```
+OPENROUTER_API_KEY=...        # Required for default Gemini Charon TTS
 OPENAI_API_KEY=sk-...          # Optional: for GPT-based director or TTS fallback
 ANTHROPIC_API_KEY=sk-ant-...   # Optional: for Claude-based director
 REPLICATE_API_TOKEN=r8_...     # Required: for image generation

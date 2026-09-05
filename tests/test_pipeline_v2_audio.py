@@ -3,9 +3,11 @@ from pathlib import Path
 import pytest
 from core.generation_receipts import paid_bytes, atomic_bytes
 
+@pytest.mark.parametrize('pipeline_name', ['pipeline_v2', 'core.pipeline_remotion'])
 @pytest.mark.parametrize('change', ['narration','provider','voice','speed','identical','skip'])
-def test_pipeline_audio_uses_original_request_receipts(tmp_path,monkeypatch,change):
-    import pipeline_v2
+def test_pipeline_audio_uses_original_request_receipts(tmp_path,monkeypatch,change,pipeline_name):
+    import importlib
+    pipeline_v2 = importlib.import_module(pipeline_name)
     from core import voice_gen, whisper_timestamps
     calls=[]
     def generator(text,output_path,*args,**kwargs):
@@ -18,7 +20,8 @@ def test_pipeline_audio_uses_original_request_receipts(tmp_path,monkeypatch,chan
     monkeypatch.setattr(whisper_timestamps,'get_word_timestamps',lambda *a: (_ for _ in ()).throw(Stop()))
     plan={'scenes':[{'id':0,'narration':'original narration'}]}
     path=tmp_path/'plan.json';path.write_text(json.dumps(plan));(tmp_path/'audio').mkdir();audio=tmp_path/'audio/scene_000.wav';audio.write_bytes(b'unknown stale wav')
-    options={'tts_provider':'openrouter','voice':'Charon','speed':1.0,'skip_qc':True}
+    options={'tts_provider':'openrouter','voice':'Charon','speed':1.0}
+    if pipeline_name == 'pipeline_v2': options['skip_qc'] = True
     with pytest.raises(Stop):pipeline_v2.run_pipeline(tmp_path,**options)
     assert len(calls)==1 and audio.read_bytes()!=b'unknown stale wav'
     before=audio.read_bytes()

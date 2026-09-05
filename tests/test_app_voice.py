@@ -8,6 +8,7 @@ class State(dict):
 
 @pytest.mark.parametrize('initial',[None,'kokoro','openrouter','openai','elevenlabs'])
 def test_actual_app_import_sidebar_and_provider_kwargs(monkeypatch,initial,tmp_path):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-key")
     import dotenv
     monkeypatch.setattr(dotenv,'load_dotenv',lambda *a,**k:None)
     st=MagicMock();st.session_state=State();selections=[]
@@ -25,3 +26,19 @@ def test_actual_app_import_sidebar_and_provider_kwargs(monkeypatch,initial,tmp_p
     if provider=='elevenlabs':assert kwargs['voice']=='Antoni' and kwargs['elevenlabs_model_id']==app.DEFAULT_ELEVENLABS_MODEL
     assert st.session_state.tts_provider_selector!='kokoro' if 'tts_provider_selector' in st.session_state else True
     sys.modules.pop('app',None)
+
+@pytest.mark.parametrize("key", [None, "", "   ", "synthetic-key"])
+def test_openrouter_setup_matches_generation_gate(monkeypatch, key, tmp_path):
+    import dotenv
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *a, **k: None)
+    if key is None: monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    else: monkeypatch.setenv("OPENROUTER_API_KEY", key)
+    st = MagicMock(); st.session_state = State(tts_provider="openrouter")
+    monkeypatch.setitem(sys.modules, "streamlit", st); sys.modules.pop("app", None)
+    app = importlib.import_module("app")
+    assert app.check_api_keys()["openrouter"] == bool(key and key.strip())
+    if key and key.strip(): assert app._tts_kwargs_from_state()["voice"] == "Charon"
+    else:
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            app._tts_kwargs_from_state()
+    sys.modules.pop("app", None)

@@ -74,6 +74,7 @@ PROJECTS_DIR.mkdir(exist_ok=True)
 def check_api_keys() -> dict[str, bool]:
     """Check which API keys are configured."""
     return {
+        "openrouter": bool((os.getenv("OPENROUTER_API_KEY") or "").strip()),
         "openai": bool(os.getenv("OPENAI_API_KEY")),
         "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
         "replicate": bool(os.getenv("REPLICATE_API_TOKEN")),
@@ -275,6 +276,8 @@ def _tts_kwargs_from_state() -> dict:
     kwargs: dict = {"tts_provider": provider}
 
     if provider == "openrouter":
+        if not check_api_keys()["openrouter"]:
+            raise ValueError("Set OPENROUTER_API_KEY in .env to generate Gemini Charon audio.")
         kwargs.update(voice=DEFAULT_OPENROUTER_VOICE, speed=DEFAULT_SPEED,
                       openrouter_model=DEFAULT_OPENROUTER_MODEL)
         return kwargs
@@ -454,6 +457,8 @@ def render_sidebar():
 
         # Provider-specific settings
         if selected_provider == "openrouter":
+            if not keys["openrouter"]:
+                st.error("Set OPENROUTER_API_KEY in .env to generate Gemini Charon audio.")
             st.caption(f"{DEFAULT_OPENROUTER_VOICE} voice, normal speed")
 
         elif selected_provider == "elevenlabs":
@@ -1067,7 +1072,11 @@ def render_step_2():
     st.caption("Regenerates ALL prompt-bearing still images via local Codex `gpt-image-2` and ALL audio via TTS in parallel. This overwrites existing assets.")
 
     if st.button("Regenerate Everything (Images + Audio)", type="primary", key="regen_everything_parallel"):
-        tts_kwargs = _tts_kwargs_from_state()
+        try:
+            tts_kwargs = _tts_kwargs_from_state()
+        except ValueError as exc:
+            st.error(str(exc))
+            return
         total = len(scenes)
         if total == 0:
             st.warning("No scenes found.")
