@@ -274,10 +274,13 @@ def _run_codex_exec_image(
 
     # Honor the user's codex config (auth, default model, image tool); running with
     # --ignore-user-config made codex fall back to a model the account rejects.
+    # Releases are plain snapshots, never git checkouts, and a trust entry in
+    # config.toml does not satisfy exec's repository check, so state it here.
     cmd = [
         runtime["path"],
         "exec",
         "--json",
+        "--skip-git-repo-check",
         "-C",
         str(_repo_root()),
         "-s",

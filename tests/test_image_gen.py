@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -200,3 +201,44 @@ def test_qwen_acknowledgement_survives_output_download_failure(monkeypatch, tmp_
     image_gen.generate_image('same request',target,model='qwen/qwen-image-2512',target_width=32,target_height=18,action_id='original-action')
     assert len(calls)==1 and len(downloads)==2
     assert target.read_bytes()!=original
+
+
+def test_codex_exec_runs_from_a_release_snapshot_without_a_git_checkout(monkeypatch, tmp_path: Path):
+    """Releases are hash-named snapshots with no .git; codex exec refuses them unless told.
+
+    On 2026-09-15 every still for SS_10-14-1997 failed before codex started:
+    'Not inside a trusted directory and --skip-git-repo-check was not specified'.
+    A trust entry in ~/.codex/config.toml did not satisfy the check.
+    """
+    from PIL import Image
+    from core import image_gen
+    from core.generation_receipts import AssetOperation
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "file":  # _ensure_png's type check on the finished PNG
+            return subprocess.CompletedProcess(cmd, 0, f"{cmd[1]}: PNG image data", "")
+        captured["cmd"] = list(cmd)
+        raw_path = Path(kwargs["input"].split("Save the PNG to ", 1)[1].split("\n", 1)[0])
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (16, 9), "navy").save(raw_path)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(image_gen, "resolve_codex_runtime", lambda: {"path": "/fake/codex", "version": "codex-cli test"})
+    monkeypatch.setattr(image_gen.subprocess, "run", fake_run)
+
+    output_path = tmp_path / "project" / "images" / "scene_001.png"
+    with AssetOperation(tmp_path / "assets", "attempt", "image-1"):
+        result = image_gen._run_codex_exec_image(
+            prompt=f"Scene title: Test\nSave the PNG to {output_path}\n",
+            output_path=output_path,
+            runner_model="gpt-5.5",
+        )
+
+    cmd = captured["cmd"]
+    assert result == output_path and output_path.is_file()
+    assert cmd[0] == "/fake/codex" and cmd[1] == "exec"
+    assert "--skip-git-repo-check" in cmd
+    assert cmd[cmd.index("-C") + 1] == str(image_gen._repo_root())
+    assert cmd[cmd.index("-m") + 1] == "gpt-5.5"
